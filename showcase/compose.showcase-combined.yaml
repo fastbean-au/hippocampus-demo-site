@@ -64,10 +64,30 @@ services:
           - "auth.${BASE_DOMAIN:-hippocampus.example}"
           - "grafana.${BASE_DOMAIN:-hippocampus.example}"
     depends_on:
+      - hippocampus-site
       - hippocampus-book
       - hippocampus-logs
       - keycloak
       - otel-lgtm
+
+  # ---- landing page: the static apex site, baked into a self-contained Caddy image (repo-root
+  #      Containerfile) and served on the shared network, so the front Caddy proxies the apex domain
+  #      to it by service name (the apex block in caddy/Caddyfile.combined -> hippocampus-site:80).
+  #      Edit ../index.html / ../assets and re-run `up --build` to redeploy the copy. -----------------
+  hippocampus-site:
+    build:
+      context: ..
+      dockerfile: Containerfile
+    image: hippocampus-demo-site:latest
+    restart: unless-stopped
+    networks:
+      - shared
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   # ---- book example: reloaded + summarised daily, decaying under a compressed clock ----------------
   hippocampus-book:
@@ -193,8 +213,8 @@ services:
 networks:
   # Shared data plane: both hippocampus services plus the shared Postgres and OpenSearch.
   data:
-  # Named explicitly so independent projects (e.g. the optional hippocampus-demo-site landing
-  # page) can attach to it as an external network and be reached by the front Caddy by name.
+  # Front-facing network shared by Caddy, both hippocampus services, the landing page, Keycloak and
+  # Grafana. Named explicitly so the name stays stable regardless of the compose project name.
   shared:
     name: hippocampus-shared
 

@@ -13,10 +13,10 @@
 	email {$ACME_EMAIL:admin@example.com}
 }
 
-# Apex landing page. Proxied to whatever provides the site upstream — by default the optional
-# hippocampus-demo-site service on the shared network. This stack does NOT require that service:
-# if it is absent the apex simply 502s while every subdomain below keeps working. Override the
-# target with SITE_UPSTREAM to point elsewhere.
+# Apex landing page. Proxied to the hippocampus-site service on the shared network — the static
+# site built from the repo root and brought up as part of this stack. Override the target with
+# SITE_UPSTREAM to point elsewhere; if the upstream is ever absent the apex simply 502s while every
+# subdomain below keeps working.
 {$BASE_DOMAIN:hippocampus.example} {
 	reverse_proxy {$SITE_UPSTREAM:hippocampus-site:80}
 }

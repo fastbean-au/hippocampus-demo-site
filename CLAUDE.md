@@ -25,11 +25,12 @@ trunk fmt <files...>
 trunk check                      # whole repo
 trunk check <files...>           # specific files
 
-# Bring up the showcase stack (creates the `hippocampus-shared` network the site joins)
-podman compose -f showcase/compose.showcase-combined.yaml up -d
+# Bring up the whole combined showcase — demos AND the landing site — in one project (the site is
+# built from the repo-root Containerfile as the `hippocampus-site` service; requires a container engine)
+podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 
-# Build + deploy the landing site (requires a container engine; the showcase stack must be up first — see below)
-podman compose up -d --build
+# Rebuild + redeploy just the site after editing index.html / assets (leaves the demos running)
+podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
 
 # Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000
@@ -39,29 +40,32 @@ There is no test suite.
 
 ## Deployment architecture (the important part)
 
-The landing site does **not** run its own public web server. It plugs into the showcase stack (now
-also in this repo, under `showcase/`), whose front Caddy already owns `:80/:443` and terminates TLS.
-The two are **separate compose projects** kept deliberately **dependency-inverted**, so the site's
-lifecycle stays independent of the running demos:
+The landing site does **not** run its own public web server. It rides on the combined showcase
+stack, whose front Caddy owns `:80/:443` and terminates TLS. The site is now a **service in that
+stack** (`hippocampus-site` in `showcase/compose.showcase-combined.yaml`), so a single
+`podman compose -f showcase/compose.showcase-combined.yaml up -d --build` brings up the demos and
+the site together:
 
-- The **showcase does not depend on the site.** Its `showcase/caddy/Caddyfile.combined` has a
-  generic apex block, `reverse_proxy {$SITE_UPSTREAM:hippocampus-site:80}`, and names its shared
-  network `hippocampus-shared`. Both are conventions it defines itself. Run the showcase without
-  the site project up and the apex simply 502s while every subdomain keeps working.
-- **The site project depends on the showcase**, which is the correct direction. The root
-  `compose.yaml` runs the site as its own project (`hippocampus-site`) that joins
-  `hippocampus-shared` as an **external** network. The front Caddy reaches it by service name over
-  container DNS — exactly how the `book` / `logs` / `auth` / `grafana` services are proxied.
+- The site service is **built from the repo root** (`build.context: ..`,
+  `dockerfile: Containerfile`) and baked into a self-contained `caddy:2` image, so it carries no
+  host-path or cross-repo dependencies. It joins the `shared` network (`hippocampus-shared`) and
+  the front Caddy reaches it by service name over container DNS — exactly how the
+  `book` / `logs` / `auth` / `grafana` services are proxied.
+- The **apex block** in `showcase/caddy/Caddyfile.combined` is
+  `reverse_proxy {$SITE_UPSTREAM:hippocampus-site:80}`. `SITE_UPSTREAM` still lets you point the
+  apex elsewhere; drop the `hippocampus-site` service and the apex simply 502s while every subdomain
+  keeps working.
 
-Consequence: the site can be deployed, restarted, or updated independently of the running demos.
-The showcase-side hooks are `showcase/caddy/Caddyfile.combined` and
-`showcase/compose.showcase-combined.yaml`; changes that touch the integration must keep the
-two conventions (the upstream name `hippocampus-site` and the network name `hippocampus-shared`)
-consistent across the root `compose.yaml` and those two files.
+The integration lives in exactly two files —
+`showcase/compose.showcase-combined.yaml` (the `hippocampus-site` service + the `shared` network)
+and `showcase/caddy/Caddyfile.combined` (the apex block) — which must agree on the service name
+`hippocampus-site` and the network name `hippocampus-shared`. The site rides **only** on the
+combined stack; the `book` / `logs` / `lite` variants have no apex block or shared network.
 
-`Caddyfile` (this repo) is the **container's internal** config — plain HTTP on `:80`, no TLS.
-`Containerfile` bakes the static files into `caddy:2`, so the image is self-contained with no host
-paths. Updating copy means editing the files and re-running `podman compose up -d --build`.
+`Caddyfile` (this repo, at the root) is the **site container's internal** config — plain HTTP on
+`:80`, no TLS. `Containerfile` (also at the root) bakes the static files into `caddy:2`. Updating
+copy means editing `index.html` / `assets/` and re-running the `up -d --build hippocampus-site`
+line above.
 
 ## Constraints when editing
 

@@ -1,9 +1,13 @@
 # Keep the build context to just what the image needs (the Containerfile COPYs files explicitly).
+# The context is now the repo root (the build lives in showcase/compose.showcase-combined.yaml), so
+# also drop the showcase/docs trees that the image never touches.
 .git
 .gitignore
 .trunk
 README.md
 LICENSE
 Containerfile
-compose.yaml
 .containerignore
+CLAUDE.md
+showcase
+docs

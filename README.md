@@ -10,47 +10,36 @@ pieces:
   published `ghcr.io/fastbean-au/hippocampus` image; the service source is the separate
   [`hippocampus`](https://github.com/fastbean-au/hippocampus) repo.
 
-The two are separate Compose projects: bring the showcase up first (it creates the shared
-network), then the landing page joins it.
+The landing page is a service in the combined showcase stack, so one command brings up the demos
+and the site together (the site is built from this repo's root `Containerfile`):
 
 ```sh
-# 1. the showcase (creates the hippocampus-shared network)
-podman compose -f showcase/compose.showcase-combined.yaml up -d
-
-# 2. the landing page (joins that network)
-podman compose up -d --build
+podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 ```
 
 ## How it's served
 
-It deploys as its **own** Compose project, independent of the showcase's lifecycle. The
-showcase's front Caddy reverse-proxies the apex domain to this container by service name over a
-shared network — so the showcase has no dependency on this repo, and this site can be brought
-up, down, or updated without touching the running demos.
+The site runs as the `hippocampus-site` service on the showcase's `hippocampus-shared` network.
+The showcase's front Caddy owns `:80/:443`, terminates TLS, and reverse-proxies the apex domain to
+this container by service name — exactly how it proxies the `book` / `logs` / `auth` / `grafana`
+subdomains.
 
 ```text
 ┌─────────────── hippocampus showcase (owns :80/:443) ───────────────┐
 │  Caddy ──reverse_proxy──▶ book / logs / auth / grafana             │
-│    └────reverse_proxy────▶ hippocampus-site:80  ◀── this repo ─────┘
-│                              (over the `hippocampus-shared` network)
+│    └────reverse_proxy────▶ hippocampus-site:80                     │
+│                              (over the `hippocampus-shared` network)│
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deploy
-
-The showcase stack must be up first (it creates the `hippocampus-shared` network). Then, from
-this repo:
-
-```sh
-podman compose up -d --build
-```
-
-The site is live at the showcase's apex domain (`https://${BASE_DOMAIN}/`), with TLS handled by
+The site rides on the **combined** stack only; the `book` / `logs` / `lite` variants have no apex
+block. It is live at the showcase's apex domain (`https://${BASE_DOMAIN}/`), with TLS handled by
 the front Caddy.
 
 ## Update the site
 
-Edit `index.html` / `assets/`, then rebuild and redeploy:
+Edit `index.html` / `assets/`, then rebuild and redeploy just the site (the demos keep running):
 
 ```sh
-podman compose up -d --build
+podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
 ```

@@ -224,10 +224,11 @@ That serves four subdomains of the one domain — point A/AAAA records for each 
 | `auth.${BASE_DOMAIN}`    | Keycloak — **shared**, one realm serving both consoles      |
 | `grafana.${BASE_DOMAIN}` | Grafana — **shared**, both services' telemetry in one place |
 
-The apex `${BASE_DOMAIN}` itself is also reverse-proxied, to an **optional** landing-page upstream
-(`hippocampus-site:80` by default, overridable with `SITE_UPSTREAM`). That upstream is not part of this
-stack — an independent project can supply it by attaching to the external `hippocampus-shared` network.
-If nothing provides it the apex simply returns 502 while every subdomain above keeps working.
+The apex `${BASE_DOMAIN}` itself is also reverse-proxied, to the `hippocampus-site` landing-page
+service (`hippocampus-site:80` by default, overridable with `SITE_UPSTREAM`). That service is part of
+this stack — a static site built from the repo-root `Containerfile` and brought up with the demos, so
+`up --build` deploys it too. Override `SITE_UPSTREAM` (or drop the service) and the apex returns 502
+while every subdomain above keeps working.
 
 Why this works with no config-file changes:
 
