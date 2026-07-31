@@ -16,9 +16,9 @@ identical, so this document concentrates on the OCI-specific plumbing.
 > **The OCI sweetener.** OCI's [Always Free](https://www.oracle.com/cloud/free/) tier includes an Arm
 > Ampere allocation of **up to 4 OCPUs and 24 GiB of memory** (`VM.Standard.A1.Flex`). That is enough
 > to run the _full_ stack **at no cost** — the one cloud where the whole showcase fits inside the free
-> tier. The only catch is architecture: A1 is `arm64`, so the generator must be cross-compiled for
-> Arm (noted in step 6). Prefer x86? The two Always Free `VM.Standard.E2.1.Micro` instances (1 OCPU /
-> 1 GiB each) host the lite stack instead.
+> tier. Every image (servers, sidecars, and the generators) is published multi-arch, so the stack runs
+> on A1 `arm64` with no architecture-specific steps. Prefer x86? The two Always Free
+> `VM.Standard.E2.1.Micro` instances (1 OCPU / 1 GiB each) host the lite stack instead.
 
 > **One domain instead of two?** Steps 1–7 stand up the two stacks on two domains, each with its own
 > Caddy and Keycloak. To serve **both examples under one parent domain** — one shared Caddy, Keycloak,
@@ -32,11 +32,9 @@ identical, so this document concentrates on the OCI-specific plumbing.
 >   podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 > ```
 >
-> The combined stack runs the generators **as containers**, so on an **x86-64** instance
-> (`E4.Flex`) it is self-driving — **skip step 6**, and
-> [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh) does steps 4–7 in one shot. On **Arm**
-> (`A1.Flex`) the generator images are not published for `arm64`, so you still supply the generators
-> from source ([step 6](#6-run-the-generators-as-systemd-services)). See
+> The combined stack runs the generators **as containers**, so it is self-driving on both `x86-64`
+> (`E4.Flex`) and `arm64` (`A1.Flex`) — **skip step 6**, and
+> [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh) does steps 4–7 in one shot. See
 > [Both examples on one domain](showcase.md#both-examples-on-one-domain-a-single-merged-stack).
 
 ## 0. Prerequisites and OCI vocabulary
@@ -67,11 +65,11 @@ RAM in use.
 | ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | Shape       | `VM.Standard.E4.Flex` at **4 OCPUs / 24 GiB** (8 vCPUs); Arm `VM.Standard.A1.Flex` at 4/24 is the Always Free option |
 | Boot volume | 100 GiB, Balanced performance (OpenSearch + telemetry retention)                                                     |
-| Image       | Canonical Ubuntu 24.04 (simple Podman install; Go only for the Arm generator build)                                  |
+| Image       | Canonical Ubuntu 24.04 (simple Podman install; generators are containers)                                            |
 | Region / AD | any region close to your viewers; pick one AD                                                                        |
 
-> On Arm (`A1.Flex`) every container image must be `arm64`. Hippocampus and the sidecars all build or
-> pull multi-arch, so the only Arm-specific step is cross-compiling the generator (step 6).
+> On Arm (`A1.Flex`) every container image must be `arm64` — and all of them (servers, sidecars, and
+> the generators) are published multi-arch, so there is no architecture-specific step.
 
 ## 2. DNS
 
@@ -196,30 +194,13 @@ weren't opened.
 
 ## 6. Run the generators as systemd services
 
-> **Using the combined stack?** Skip this section — it runs the generators as containers already
-> (**on an `x86-64` instance**; see the Arm note below).
+> **Using the combined stack?** Skip this section — it runs the generators as containers already.
 
-The generators ship as published images
-(`ghcr.io/fastbean-au/hippocampus-gen-{book,logs}:latest`). **On an `x86-64` instance** there is
-nothing to build — use the container units from the [GCP runbook](showcase-gcp.md#6-run-the-generators-as-systemd-services)
-verbatim.
-
-**On Arm (`A1.Flex`, the Always-Free tier) those images do not run** — they are published for
-`linux/amd64` only. Build the `arm64` binaries from source instead. The `hippocampus` module is public
-now, so this needs no Git credentials:
-
-```sh
-git clone https://github.com/fastbean-au/hippocampus-gen.git
-cd hippocampus-gen
-go build -o /usr/local/bin/hippocampus-gen-book ./cmd/book
-go build -o /usr/local/bin/hippocampus-gen-logs ./cmd/logs
-```
-
-(Or build on a machine that has Go and `scp` the binaries over — cross-compile for Arm with
-`GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build …`, or an `x86-64` binary will `exec format error` on
-the instance. Building _on_ the box picks the right arch automatically.)
-
-Put the shared generator client secret in a root-only env file:
+The generators ship as published, **multi-arch** images
+(`ghcr.io/fastbean-au/hippocampus-gen-{book,logs}:latest`), so on both `x86-64` and `arm64` instances
+there is nothing to build — use the container systemd units from the
+[GCP runbook](showcase-gcp.md#6-run-the-generators-as-systemd-services) verbatim (`podman` pulls the
+image matching the instance's arch). Put the shared generator client secret in a root-only env file:
 
 ```sh
 sudo install -d /etc/hippocampus-gen
@@ -285,9 +266,9 @@ journalctl -u hippocampus-gen-book -f
 ## 7. Operate
 
 - **Restart a stack:** `podman compose -f showcase/compose.showcase-book.yaml restart`.
-- **Update:** `git pull`, then `podman compose ... up --build -d`. On x86 the generators pull `:latest`
-  (`podman pull … && systemctl restart …`); on Arm rebuild the from-source binaries. Keycloak keeps its
-  realm (named volume); the book store is purged each cycle anyway.
+- **Update:** `git pull`, then `podman compose ... up --build -d`; the generators pull the multi-arch
+  `:latest` (`podman pull … && systemctl restart …`). Keycloak keeps its realm (named volume); the book
+  store is purged each cycle anyway.
 - **Reset everything:** `podman compose ... down -v` drops the named volumes (Postgres, OpenSearch,
   Keycloak, Caddy certs) for a clean slate — the realm re-imports on next start.
 - **Certificates** live in the `*-caddy-data` volume and renew automatically; keep 80/443 reachable

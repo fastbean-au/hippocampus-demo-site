@@ -18,8 +18,9 @@ This repo holds two things for the Hippocampus demo:
    [`hippocampus`](https://github.com/fastbean-au/hippocampus) repo, not here. The **combined** stack
    is self-driving: it runs the data generators as containers
    (`ghcr.io/fastbean-au/hippocampus-gen-{book,logs}:latest`, from the separate
-   [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo — **`linux/amd64` only**),
-   so a single `up -d` brings up the load too. The realm is **read-only for visitors** (one
+   [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo), so a single `up -d`
+   brings up the load too. All images (servers, sidecars, generators) publish multi-arch
+   (amd64 + arm64). The realm is **read-only for visitors** (one
    `reader-demo` login); the generators write as the `hippocampus-gen` service account (`admin`).
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
    Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options).

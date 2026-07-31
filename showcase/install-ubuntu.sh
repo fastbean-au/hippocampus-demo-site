@@ -13,9 +13,8 @@
 # is nothing else to run. Visitors who sign in to a console are read-only (the realm ships a single
 # reader-demo login); the writing is done by the hippocampus-gen service account.
 #
-# ARCHITECTURE: the hippocampus-gen images are published for linux/amd64 only, so this targets an
-# x86-64 host. On arm64 the servers still run, but the generators will not - see docs/showcase-oci.md
-# for the from-source Arm build.
+# ARCHITECTURE: every image (servers, sidecars, and generators) is published multi-arch, so this runs
+# on both linux/amd64 and linux/arm64 hosts.
 #
 # Usage (run as root, from a checkout of this repository):
 #
@@ -54,7 +53,7 @@ die() {
 
 usage() {
   # Print the leading comment block (the lines between the shebang and `set -euo pipefail`) as help.
-  sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,34p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -91,14 +90,6 @@ done
 [[ $EUID -eq 0 ]] || die "run as root (e.g. with sudo) - it writes ${UNIT_FILE}."
 [[ -n "$BASE_DOMAIN" ]] || die "--base-domain is required (try --help)."
 [[ -n "$ACME_EMAIL" ]] || die "--acme-email is required (try --help)."
-
-# The hippocampus-gen images are amd64-only; warn (don't fail) on other arches so the servers can
-# still be brought up while the operator arranges an Arm generator build.
-ARCH="$(uname -m)"
-if [[ "$ARCH" != "x86_64" && "$ARCH" != "amd64" ]]; then
-  echo "WARNING: host arch is ${ARCH}, but the hippocampus-gen images are linux/amd64 only." >&2
-  echo "WARNING: the servers will run, but the generators will not - see docs/showcase-oci.md." >&2
-fi
 
 # Resolve the repository root from this script's location (showcase/install-ubuntu.sh -> repo root),
 # so the systemd unit gets an absolute WorkingDirectory and the compose build context resolves.
