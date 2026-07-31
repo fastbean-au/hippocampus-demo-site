@@ -60,30 +60,6 @@
   ],
   "users": [
     {
-      "username": "admin-demo",
-      "enabled": true,
-      "emailVerified": true,
-      "email": "admin@hippocampus.example",
-      "firstName": "Ada",
-      "lastName": "Admin",
-      "credentials": [
-        { "type": "password", "value": "admin", "temporary": false }
-      ],
-      "realmRoles": ["admin"]
-    },
-    {
-      "username": "writer-demo",
-      "enabled": true,
-      "emailVerified": true,
-      "email": "writer@hippocampus.example",
-      "firstName": "Wilma",
-      "lastName": "Writer",
-      "credentials": [
-        { "type": "password", "value": "writer", "temporary": false }
-      ],
-      "realmRoles": ["writer"]
-    },
-    {
       "username": "reader-demo",
       "enabled": true,
       "emailVerified": true,

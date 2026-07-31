@@ -12,7 +12,8 @@
 #   logs console:  https://logs.${BASE_DOMAIN}/ui       (logs.hippocampus.example)
 #   keycloak:      https://auth.${BASE_DOMAIN}/         (auth.hippocampus.example) — SHARED by both
 #   grafana:       https://grafana.${BASE_DOMAIN}/      (grafana.hippocampus.example) — SHARED by both
-#   gRPC:          <vm>:50051 (book), <vm>:50052 (logs) — for the host-run generators
+#   gRPC:          <vm>:50051 (book), <vm>:50052 (logs) — published for optional external tooling
+#                  (the in-stack generators reach the services by name, not via these ports)
 #
 # Point DNS A/AAAA records for those four names (or a single *.${BASE_DOMAIN} wildcard) at the host,
 # with 80/443 reachable for the ACME challenge.
@@ -38,9 +39,18 @@
 # rather than by editing the configs. Separate databases are what keep the single-consolidator
 # advisory lock from colliding (see postgres/init-showcase-combined.sql); a shared cluster is fine.
 #
-# The data generators are NOT containers here (their module pulls a private dependency a clean image
-# build cannot fetch); they run as host processes against the published gRPC ports. Both authenticate
-# to the SHARED issuer https://auth.${BASE_DOMAIN}/realms/hippocampus. See docs/showcase.md.
+# The data generators now run as CONTAINERS in this stack (the published
+# ghcr.io/fastbean-au/hippocampus-gen-{book,logs} images), so a single `up -d` brings up a fully
+# self-driving showcase - the servers AND the load that feeds them. Each runs as the hippocampus-gen
+# client (client-credentials, admin role) against the SHARED issuer
+# https://auth.${BASE_DOMAIN}/realms/hippocampus, reaching both the issuer (via the Caddy alias) and
+# its target service by name over the `shared` network - no host processes or systemd units. They
+# wait for Keycloak to report healthy before starting so the book's first cycle does not miss its
+# token and idle a whole period. See docs/showcase.md.
+#
+# READ-ONLY FOR VISITORS: the realm ships a single reader-demo login, so anyone who signs in to a
+# console can browse but not mutate; the writing is done by the hippocampus-gen service account. The
+# gRPC ports are still published for optional external tooling, but nothing needs them anymore.
 
 services:
   caddy:
@@ -139,6 +149,68 @@ services:
       keycloak:
         condition: service_started
 
+  # ---- data generators (containerised): the self-driving load. Each authenticates as the
+  #      hippocampus-gen client (client-credentials, admin role) to the SHARED issuer and dials its
+  #      target service by name over the `shared` network. Override GEN_SECRET to match the realm if
+  #      you change the demo secret. ----------------------------------------------------------------
+
+  # Great Expectations, reloaded + summarised once a day under the compressed decay clock. --reset
+  # purges the store at the start of every cycle - and the loop's first cycle runs immediately - so a
+  # fresh start clears any existing events and memories before loading. Needs the admin role (Purge +
+  # the summarisation Sleep), which the hippocampus-gen service account carries.
+  hippocampus-gen-book:
+    image: ghcr.io/fastbean-au/hippocampus-gen-book:latest
+    restart: unless-stopped
+    command:
+      - "-s"
+      - "hippocampus-book:50051"
+      - "--loop"
+      - "--period"
+      - "24h"
+      - "--reset"
+      - "--pace-window"
+      - "2h"
+      - "--live"
+      - "--summarize"
+      - "--oidc-issuer"
+      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      - "--oidc-client-id"
+      - "hippocampus-gen"
+      - "--oidc-client-secret"
+      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+    networks:
+      - shared
+    depends_on:
+      hippocampus-book:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+  # A steady ~120 lines/min trickle at the current time, reaped by consolidation + capacity eviction
+  # so the store stays bounded. Storing memories needs the writer role, which admin includes.
+  hippocampus-gen-logs:
+    image: ghcr.io/fastbean-au/hippocampus-gen-logs:latest
+    restart: unless-stopped
+    command:
+      - "-s"
+      - "hippocampus-logs:50051"
+      - "--live"
+      - "--rate"
+      - "120"
+      - "--oidc-issuer"
+      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      - "--oidc-client-id"
+      - "hippocampus-gen"
+      - "--oidc-client-secret"
+      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+    networks:
+      - shared
+    depends_on:
+      hippocampus-logs:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
   # ---- shared data stores (one Postgres with a database per tenant, one OpenSearch with an index
   #      per tenant); the book/logs services reach these by service name over the `data` network ----
   postgres:
@@ -191,11 +263,25 @@ services:
       KC_HOSTNAME: "https://auth.${BASE_DOMAIN:-hippocampus.example}"
       KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
+      # Expose the /health/* endpoints on the management port (9000) so the generators can gate on a
+      # ready IdP rather than racing the realm import and missing their first token.
+      KC_HEALTH_ENABLED: "true"
     volumes:
       - ./keycloak/realm-hippocampus.json:/opt/keycloak/data/import/realm.json:ro
       - combined-keycloak-data:/opt/keycloak/data
     networks:
       - shared
+    # The image ships no curl/wget, so the probe speaks raw HTTP to the management port over bash's
+    # /dev/tcp and looks for an "UP" status. /bin/sh is bash on the UBI base, so /dev/tcp works.
+    healthcheck:
+      test: >-
+        exec 3<>/dev/tcp/localhost/9000 &&
+        printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+        grep -q UP <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
 
   # ---- shared telemetry (both services export here; tell them apart by service.name) --------------
   otel-lgtm:

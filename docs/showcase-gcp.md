@@ -22,8 +22,10 @@ this only covers the VM.
 >   podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 > ```
 >
-> The generators (step 6) then both authenticate to the one shared issuer
-> `https://auth.${BASE_DOMAIN}/realms/hippocampus`. See
+> The combined stack runs the generators **as containers**, so it is self-driving — **skip step 6
+> entirely** (and you don't need Go from [step 4](#4-install-podman)). On a fresh Ubuntu 24.04
+> host, [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh) does steps 4–7 in one shot
+> (installs Podman, records the domain/email, and registers a boot systemd unit). See
 > [Both examples on one domain](showcase.md#both-examples-on-one-domain-a-single-merged-stack).
 
 ## 1. Sizing
@@ -36,7 +38,7 @@ RAM in use.
 | ------------ | ---------------------------------------------------------------------- |
 | Machine type | `e2-standard-4` (4 vCPU / 16 GiB) minimum; `e2-standard-8` comfortable |
 | Boot disk    | 50 GiB `pd-ssd` (OpenSearch + telemetry retention)                     |
-| Image        | Ubuntu 24.04 LTS (simple Podman + Go install)                          |
+| Image        | Ubuntu 24.04 LTS (simple Podman install; generators are containers)    |
 | Region       | anywhere close to your viewers                                         |
 
 ## 2. DNS
@@ -73,11 +75,14 @@ gcloud compute firewall-rules create hippocampus-showcase-web \
 
 (SSH is covered by GCP's default rule / IAP.)
 
-## 4. Install Podman and Go
+## 4. Install Podman
+
+The generators are containers now, so there's no Go toolchain to install — just Podman, the compose
+provider, and Git:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y podman podman-compose golang-go git
+sudo apt-get install -y podman podman-compose git
 
 # Rootless Podman can't bind ports below 1024, and Caddy needs 80/443. Allow it:
 echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-podman-ports.conf
@@ -105,28 +110,16 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
 ```
 
 Watch the certificates arrive (`podman compose ... logs -f caddy`), then browse to
-`https://book.example/ui` and sign in as `admin-demo` / `writer-demo` / `reader-demo`.
+`https://book.example/ui` and sign in as `reader-demo` (the read-only demo user).
 
 ## 6. Run the generators as systemd services
 
-The generators are a separate module ([`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen));
-they run as host processes against the VM-local gRPC ports. That module depends on the private
-`hippocampus` module, so building on the VM needs Git credentials — set `GOPRIVATE` and provide a
-token (a read-only deploy token is enough):
+> **Using the combined stack?** Skip this section — it runs the generators as containers already.
 
-```sh
-git clone https://github.com/fastbean-au/hippocampus-gen.git
-cd hippocampus-gen
-export GOPRIVATE=github.com/fastbean-au/*
-git config --global url."https://<TOKEN>@github.com/".insteadOf "https://github.com/"
-go build -o /usr/local/bin/hippocampus-gen-book ./cmd/book
-go build -o /usr/local/bin/hippocampus-gen-logs ./cmd/logs
-```
-
-(Alternatively build the two binaries on a machine that already has access and `scp` them over — no
-toolchain or credentials on the VM.)
-
-Put the shared generator client secret in a root-only env file:
+The generators ship as published images (`ghcr.io/fastbean-au/hippocampus-gen-{book,logs}:latest`), so
+there is **no toolchain, no Git credentials, and nothing to build** on the VM — a systemd unit just
+runs the image against each stack's VM-local gRPC port. Put the shared generator client secret in a
+root-only env file:
 
 ```sh
 sudo install -d /etc/hippocampus-gen
@@ -134,7 +127,8 @@ echo "GEN_SECRET=<the hippocampus-gen client secret>" | sudo tee /etc/hippocampu
 sudo chmod 600 /etc/hippocampus-gen/showcase.env
 ```
 
-`/etc/systemd/system/hippocampus-gen-book.service` — reloads and summarises the book daily:
+`/etc/systemd/system/hippocampus-gen-book.service` — reloads and summarises the book daily
+(`--reset` clears the store at the start of each cycle, including the first):
 
 ```ini
 [Unit]
@@ -145,13 +139,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/hippocampus-gen/showcase.env
-ExecStart=/usr/local/bin/hippocampus-gen-book -s localhost:50051 \
-  --loop --period 24h --reset --pace-window 2h --live --summarise \
+ExecStart=/usr/bin/podman run --rm --network host ghcr.io/fastbean-au/hippocampus-gen-book:latest \
+  -s localhost:50051 --loop --period 24h --reset --pace-window 2h --live --summarize \
   --oidc-issuer https://auth.book.example/realms/hippocampus \
   --oidc-client-id hippocampus-gen --oidc-client-secret ${GEN_SECRET}
 Restart=always
 RestartSec=30
-DynamicUser=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -168,12 +161,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/hippocampus-gen/showcase.env
-ExecStart=/usr/local/bin/hippocampus-gen-logs -s localhost:50052 --live --rate 120 \
+ExecStart=/usr/bin/podman run --rm --network host ghcr.io/fastbean-au/hippocampus-gen-logs:latest \
+  -s localhost:50052 --live --rate 120 \
   --oidc-issuer https://auth.logs.example/realms/hippocampus \
   --oidc-client-id hippocampus-gen --oidc-client-secret ${GEN_SECRET}
 Restart=always
 RestartSec=30
-DynamicUser=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -186,14 +179,15 @@ journalctl -u hippocampus-gen-book -f
 ```
 
 > The client secret appears in the process command line (visible to `ps` on the VM). That is
-> acceptable for a throwaway showcase; for anything more, teach the generator to read the secret from
-> the environment instead of a flag.
+> acceptable for a throwaway showcase; for anything more, pass it via the `EnvironmentFile` into the
+> container instead of on the flag.
 
 ## 7. Operate
 
 - **Restart a stack:** `podman compose -f showcase/compose.showcase-book.yaml restart`.
-- **Update:** `git pull`, then `podman compose ... up --build -d`, and rebuild the generator binaries.
-  Keycloak keeps its realm (named volume); the book store is purged each cycle anyway.
+- **Update:** `git pull`, then `podman compose ... up --build -d`; the generators pull `:latest`, so
+  `podman pull ghcr.io/fastbean-au/hippocampus-gen-{book,logs}:latest && systemctl restart …` refreshes
+  them. Keycloak keeps its realm (named volume); the book store is purged each cycle anyway.
 - **Reset everything:** `podman compose ... down -v` drops the named volumes (Postgres, OpenSearch,
   Keycloak, Caddy certs) for a clean slate — the realm re-imports on next start.
 - **Certificates** live in the `*-caddy-data` volume and renew automatically; keep 80/443 reachable.
@@ -401,7 +395,7 @@ Wants=network-online.target
 Type=simple
 EnvironmentFile=/etc/hippocampus-gen/lite.env
 ExecStart=/usr/local/bin/hippocampus-gen-book -s localhost:50051 \
-  --loop --period 24h --reset --pace-window 6h --live --summarise \
+  --loop --period 24h --reset --pace-window 6h --live --summarize \
   --oidc-issuer https://AUTH0_DOMAIN/ \
   --oidc-audience AUTH0_AUDIENCE \
   --oidc-client-id ${GEN_CLIENT_ID} --oidc-client-secret ${GEN_SECRET}

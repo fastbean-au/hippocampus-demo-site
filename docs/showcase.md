@@ -62,8 +62,10 @@ A ready-to-import realm lives at
   `https://book.hippocampus.example/ui` / `https://logs.hippocampus.example/ui` placeholders);
 - a **confidential client** `hippocampus-gen` (client-credentials, `serviceAccountsEnabled`) with the
   `admin` role, for the generators — **change its `secret`** before deploying;
-- demo users `admin-demo` / `writer-demo` / `reader-demo` (password = the role) so you can sign in and
-  see the role-gated console.
+- a single demo user `reader-demo` (password `reader`) so visitors who sign in to a console can
+  **browse but not mutate** — the showcase is read-only for people, and all writing is done by the
+  `hippocampus-gen` service account. The `writer`/`admin` roles are still defined (the generator uses
+  `admin`); add `writer-demo`/`admin-demo` users back if you want interactive write access.
 
 Keycloak publishes roles under the nested `realm_access.roles` claim, which is why the configs set
 `auth.roleClaim: "realm_access.roles"` (resolved via the dotted-path lookup — see
@@ -170,32 +172,34 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
   podman compose -f showcase/compose.showcase-logs.yaml up --build -d
 ```
 
-Sign in to `https://book.example/ui` as `admin-demo` / `writer-demo` / `reader-demo` (password = the
-role) and watch the console adapt to the tier.
+Sign in to `https://book.example/ui` as `reader-demo` (password `reader`) and browse the read-only
+console.
 
 ### Drive it with the generators
 
-The generators run as **host processes** (they are a separate Go module whose private dependency a
-clean image build can't fetch without credentials — so they are not compose services). Build them
-from the sibling [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) checkout and
-point them at the published gRPC port, authenticating to Keycloak as the `hippocampus-gen` client
-(admin tier — the book path calls `Purge`/`Sleep`):
+The generators ship as published container images —
+`ghcr.io/fastbean-au/hippocampus-gen-{book,logs,random}:latest`, built by the
+[`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo's CI. The
+[combined stack](#both-examples-on-one-domain-a-single-merged-stack) runs the `book` and `logs`
+images **as services**, so it is self-driving with no extra step (see below). For the standalone
+`book`/`logs` stacks above, run the matching image against the published gRPC port, authenticating to
+Keycloak as the `hippocampus-gen` client (admin tier — the book path calls `Purge`/`Sleep`):
 
 ```sh
 # book: reload + summarise every 24h, spread across 2h, ageing live
-go run ./cmd/book -s <vm>:50051 \
-  --loop --period 24h --reset --pace-window 2h --live --summarise \
+podman run --rm ghcr.io/fastbean-au/hippocampus-gen-book:latest -s <vm>:50051 \
+  --loop --period 24h --reset --pace-window 2h --live --summarize \
   --oidc-issuer https://auth.book.example/realms/hippocampus \
   --oidc-client-id hippocampus-gen --oidc-client-secret "$GEN_SECRET"
 
 # logs: a steady trickle the sleep cycle keeps reaping
-go run ./cmd/logs -s <vm>:50052 --live --rate 120 \
+podman run --rm ghcr.io/fastbean-au/hippocampus-gen-logs:latest -s <vm>:50052 --live --rate 120 \
   --oidc-issuer https://auth.logs.example/realms/hippocampus \
   --oidc-client-id hippocampus-gen --oidc-client-secret "$GEN_SECRET"
 ```
 
-Running these unattended (a systemd unit per stack) is covered in the per-cloud deployment runbooks
-([GCP](showcase-gcp.md), [OCI](showcase-oci.md)).
+The book generator's `--reset` purges the store at the start of every cycle, and its first cycle runs
+immediately — so a fresh start clears any existing events and memories before loading.
 
 ### Both examples on one domain (a single merged stack)
 
@@ -249,10 +253,33 @@ Why this works with no config-file changes:
   DSN database name and index name are supplied as `HIPPOCAMPUS_STORAGE_POSTGRES_DSN` /
   `HIPPOCAMPUS_OPENSEARCH_INDEX` env overrides rather than by editing the configs.
 
-The generators are unchanged except that **both now authenticate to the shared issuer**
-`https://auth.${BASE_DOMAIN}/realms/hippocampus` (only `-s localhost:50051` vs `50052` and the config
-differ). For a real domain, set `BASE_DOMAIN` and change the console client's `redirectUris`/
-`webOrigins` in the realm to match, along with the demo secrets.
+Unlike the standalone stacks, the combined stack runs the **generators as containers**
+(`hippocampus-gen-book` / `hippocampus-gen-logs`), so the single `up -d` above brings up a
+**self-driving** showcase — the servers _and_ the load that feeds them, with no host processes or
+systemd units. Both authenticate as the `hippocampus-gen` client to the shared issuer
+`https://auth.${BASE_DOMAIN}/realms/hippocampus`, reaching it (via the Caddy alias) and their target
+service by name over the shared network. They wait for Keycloak to report healthy — the stack enables
+`KC_HEALTH_ENABLED` and gates the generators on it — so the book's first cycle doesn't miss its token
+and idle a whole period. Override `GEN_SECRET` to match the realm if you change the demo secret. For a
+real domain, set `BASE_DOMAIN` and change the console client's `redirectUris`/`webOrigins` in the
+realm to match, along with the demo secrets.
+
+#### One-command install on a fresh VM
+
+On a clean **Ubuntu 24.04 (minimal)** host, [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh)
+does the whole thing: it installs Podman + the compose provider, records the base domain and ACME
+email, and registers a systemd unit that brings the combined stack up at boot (and back up after a
+reboot — the containers' `restart: unless-stopped` handles crashes in between):
+
+```sh
+sudo ./showcase/install-ubuntu.sh \
+  --base-domain hippocampus.example \
+  --acme-email  you@example.com
+# --gen-secret <secret>   optional; must match the realm if you changed it
+```
+
+Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.` subdomains at the host (80/443
+reachable) so Caddy can provision TLS, and the self-driving showcase comes up on its own.
 
 > **Shared identity is the trade-off.** One realm means one set of users and one signing key across
 > both examples, so a token minted by signing in to the book console is also accepted by the logs
