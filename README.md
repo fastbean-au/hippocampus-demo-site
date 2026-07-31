@@ -1,7 +1,25 @@
 # hippocampus-demo-site
 
-Landing page for the [Hippocampus](https://github.com/fastbean-au/hippocampus) demo — a static
-site (`index.html` + `assets/`) served by Caddy.
+The public demo for [Hippocampus](https://github.com/fastbean-au/hippocampus). This repo holds two
+pieces:
+
+- **The landing page** — a static site (`index.html` + `assets/`) served by Caddy (this README).
+- **The hosted showcase** — the runnable demo stacks under [`showcase/`](showcase/) and their
+  documentation under [`docs/`](docs/). Start at **[docs/showcase.md](docs/showcase.md)** (with
+  per-cloud runbooks [GCP](docs/showcase-gcp.md) / [OCI](docs/showcase-oci.md)). The stacks pull the
+  published `ghcr.io/fastbean-au/hippocampus` image; the service source is the separate
+  [`hippocampus`](https://github.com/fastbean-au/hippocampus) repo.
+
+The two are separate Docker Compose projects: bring the showcase up first (it creates the shared
+network), then the landing page joins it.
+
+```sh
+# 1. the showcase (creates the hippocampus-shared network)
+docker compose -f showcase/docker-compose.showcase-combined.yaml up -d
+
+# 2. the landing page (joins that network)
+docker compose up -d --build
+```
 
 ## How it's served
 

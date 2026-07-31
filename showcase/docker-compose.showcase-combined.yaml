@@ -1,0 +1,206 @@
+# Hosted showcase, BOTH examples under ONE domain, on ONE host. This merges the separate book and
+# logs stacks into a single compose project so that a single Caddy owns :80/:443 (two Caddys cannot),
+# fronting both consoles plus a SHARED Keycloak and a SHARED Grafana. It is the consolidated
+# counterpart to docker-compose.showcase-book.yaml + docker-compose.showcase-logs.yaml — same server
+# side, same split-issuer design, but one front proxy and one identity provider instead of two.
+#
+#   BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
+#     docker compose -f showcase/docker-compose.showcase-combined.yaml up --build -d
+#
+# Everything hangs off ONE parent domain via four subdomains (defaults in parentheses):
+#   book console:  https://book.${BASE_DOMAIN}/ui       (book.hippocampus.example)
+#   logs console:  https://logs.${BASE_DOMAIN}/ui       (logs.hippocampus.example)
+#   keycloak:      https://auth.${BASE_DOMAIN}/         (auth.hippocampus.example) — SHARED by both
+#   grafana:       https://grafana.${BASE_DOMAIN}/      (grafana.hippocampus.example) — SHARED by both
+#   gRPC:          <vm>:50051 (book), <vm>:50052 (logs) — for the host-run generators
+#
+# Point DNS A/AAAA records for those four names (or a single *.${BASE_DOMAIN} wildcard) at the host,
+# with 80/443 reachable for the ACME challenge.
+#
+# THE SPLIT-ISSUER FIX (see Caddyfile.book for the full rationale): Caddy joins the `shared` network
+# carrying auth.${BASE_DOMAIN} as an alias, so BOTH hippocampus containers resolve the issuer host to
+# Caddy and reach Keycloak at exactly the URL the browser uses. HIPPOCAMPUS_AUTH_ISSUER is therefore
+# the same public https URL on both sides.
+#
+# SHARED KEYCLOAK: one realm (showcase/keycloak/realm-hippocampus.json) already defines the console
+# client with BOTH console redirect URIs and one hippocampus-gen client, so a single Keycloak serves
+# both examples. A token from either console is valid at either service (shared identity) — fine for a
+# demo. For a real domain, change BASE_DOMAIN AND the console client's redirectUris/webOrigins in the
+# realm to match, and change the demo secrets (Postgres, Keycloak admin, the gen client secret).
+#
+# The book/logs data stores SHARE one Postgres and one OpenSearch container (unlike the standalone
+# stacks, which run a pair of each) but stay logically ISOLATED: the shared Postgres hosts two
+# databases (`hippocampus_book` / `hippocampus_logs`, created by postgres/init-showcase-combined.sql
+# on first boot) and each service uses its own OpenSearch index (`book-memories` / `logs-memories`).
+# The two configs (config.showcase-book.json / config.showcase-logs.json) are still reused VERBATIM
+# and shared with the standalone stacks, so the per-tenant DSN database name and index name are
+# supplied here as HIPPOCAMPUS_STORAGE_POSTGRES_DSN / HIPPOCAMPUS_OPENSEARCH_INDEX env overrides
+# rather than by editing the configs. Separate databases are what keep the single-consolidator
+# advisory lock from colliding (see postgres/init-showcase-combined.sql); a shared cluster is fine.
+#
+# The data generators are NOT containers here (their module pulls a private dependency a clean image
+# build cannot fetch); they run as host processes against the published gRPC ports. Both authenticate
+# to the SHARED issuer https://auth.${BASE_DOMAIN}/realms/hippocampus. See docs/showcase.md.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      BASE_DOMAIN: "${BASE_DOMAIN:-hippocampus.example}"
+      ACME_EMAIL: "${ACME_EMAIL:-admin@example.com}"
+    volumes:
+      - ./caddy/Caddyfile.combined:/etc/caddy/Caddyfile:ro
+      - combined-caddy-data:/data
+      - combined-caddy-config:/config
+    networks:
+      shared:
+        aliases:
+          - "book.${BASE_DOMAIN:-hippocampus.example}"
+          - "logs.${BASE_DOMAIN:-hippocampus.example}"
+          - "auth.${BASE_DOMAIN:-hippocampus.example}"
+          - "grafana.${BASE_DOMAIN:-hippocampus.example}"
+    depends_on:
+      - hippocampus-book
+      - hippocampus-logs
+      - keycloak
+      - otel-lgtm
+
+  # ---- book example: reloaded + summarised daily, decaying under a compressed clock ----------------
+  hippocampus-book:
+    image: ghcr.io/fastbean-au/hippocampus:latest
+    restart: unless-stopped
+    ports:
+      - "${BOOK_GRPC_PORT:-50051}:50051"
+    volumes:
+      - ./config.showcase-book.json:/etc/hippocampus/config.json:ro
+    environment:
+      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      # Co-tenant overrides: own database in the shared Postgres, own index in the shared OpenSearch.
+      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_book?sslmode=disable"
+      HIPPOCAMPUS_OPENSEARCH_INDEX: "book-memories"
+    networks:
+      - data
+      - shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  # ---- logs example: a continuous trickle, reaped by consolidation + capacity eviction -------------
+  hippocampus-logs:
+    image: ghcr.io/fastbean-au/hippocampus:latest
+    restart: unless-stopped
+    ports:
+      - "${LOGS_GRPC_PORT:-50052}:50051"
+    volumes:
+      - ./config.showcase-logs.json:/etc/hippocampus/config.json:ro
+    environment:
+      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      # Co-tenant overrides: own database in the shared Postgres, own index in the shared OpenSearch.
+      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_logs?sslmode=disable"
+      HIPPOCAMPUS_OPENSEARCH_INDEX: "logs-memories"
+    networks:
+      - data
+      - shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  # ---- shared data stores (one Postgres with a database per tenant, one OpenSearch with an index
+  #      per tenant); the book/logs services reach these by service name over the `data` network ----
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hippocampus
+      POSTGRES_PASSWORD: hippocampus
+      POSTGRES_DB: hippocampus
+    volumes:
+      - combined-postgres-data:/var/lib/postgresql/data
+      # Creates hippocampus_book / hippocampus_logs on first boot (empty-volume init only).
+      - ./postgres/init-showcase-combined.sql:/docker-entrypoint-initdb.d/init-showcase-combined.sql:ro
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hippocampus -d hippocampus"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  opensearch:
+    image: opensearchproject/opensearch:3.1.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - combined-opensearch-data:/usr/share/opensearch/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+
+  # ---- shared identity provider (one realm, both consoles) ----------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      # Full external URL so the token issuer is the public https address; KC_PROXY_HEADERS makes
+      # Keycloak trust Caddy's X-Forwarded-* so it knows the request arrived over TLS.
+      KC_HOSTNAME: "https://auth.${BASE_DOMAIN:-hippocampus.example}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - ./keycloak/realm-hippocampus.json:/opt/keycloak/data/import/realm.json:ro
+      - combined-keycloak-data:/opt/keycloak/data
+    networks:
+      - shared
+
+  # ---- shared telemetry (both services export here; tell them apart by service.name) --------------
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "https://grafana.${BASE_DOMAIN:-hippocampus.example}/"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json
+    volumes:
+      - ./observability/hippocampus-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json:ro
+      - ./observability/dashboards-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+    networks:
+      - shared
+
+networks:
+  # Shared data plane: both hippocampus services plus the shared Postgres and OpenSearch.
+  data:
+  # Named explicitly so independent projects (e.g. the optional hippocampus-demo-site landing
+  # page) can attach to it as an external network and be reached by the front Caddy by name.
+  shared:
+    name: hippocampus-shared
+
+volumes:
+  combined-postgres-data:
+  combined-opensearch-data:
+  combined-keycloak-data:
+  combined-caddy-data:
+  combined-caddy-config:
