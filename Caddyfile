@@ -1,0 +1,21 @@
+# Internal config for the landing-page container. It serves plain HTTP on :80 — TLS,
+# HTTP/3, and the public certificate are the front proxy's job (the showcase's Caddy,
+# which owns :80/:443 and reverse-proxies the apex domain to this service by name).
+:80 {
+	root * /srv/site
+	encode gzip
+
+	header {
+		# The page loads only same-origin CSS/JS plus inline SVG symbols; lock everything
+		# else down. 'unsafe-inline' on style covers the one inline style attribute in the
+		# markup (the visually-hidden SVG symbol sheet).
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+
+		# Assets are not content-hashed, so allow brief caching but always revalidate.
+		Cache-Control "public, max-age=3600, must-revalidate"
+	}
+
+	file_server
+}

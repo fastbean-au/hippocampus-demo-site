@@ -1,0 +1,32 @@
+# Landing page for the Hippocampus showcase, deployed as its OWN compose project — fully
+# independent of the showcase's lifecycle. It attaches to the showcase's shared network so the
+# front Caddy can reverse-proxy the apex domain to it by service name (hippocampus-site:80).
+#
+# The showcase does NOT depend on this repo: it names an upstream + a network, both conventions
+# it defines itself. Bring the site up/down without touching the running demos.
+#
+# Prereq: the showcase stack is up (it creates the `hippocampus-shared` network), then:
+#   docker compose up -d --build
+#
+# Update the site: edit index.html / assets, then re-run the line above (rebuilds + redeploys).
+
+services:
+  hippocampus-site:
+    build: .
+    image: hippocampus-demo-site:latest
+    restart: unless-stopped
+    networks:
+      - shared
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  # The showcase owns this network; we join it as external. Its name must match the `name:`
+  # given to the shared network in docker-compose.showcase-combined.yaml.
+  shared:
+    external: true
+    name: hippocampus-shared

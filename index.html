@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hippocampus — a finite, biologically-inspired memory engine</title>
+    <meta
+      name="description"
+      content="Hippocampus is a finite, biologically-inspired memory storage engine for log retention, audit trails, and context management. Try the live book and logs demos."
+    />
+    <link rel="canonical" href="https://hippocampus-demo.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://hippocampus-demo.com/" />
+    <meta
+      property="og:title"
+      content="Hippocampus — a finite, biologically-inspired memory engine"
+    />
+    <meta
+      property="og:description"
+      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live book and logs demos."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/styles.css" />
+    <script src="assets/theme.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Hippocampus home">
+          <svg
+            class="brand-mark"
+            width="28"
+            height="28"
+            viewBox="0 0 32 32"
+            aria-hidden="true"
+          >
+            <use href="#hc-mark" />
+          </svg>
+          <span class="brand-name">Hippocampus</span>
+        </a>
+
+        <nav class="site-nav" aria-label="Primary">
+          <a href="#demos">Demos</a>
+          <a href="#how">How it works</a>
+          <a href="https://github.com/fastbean-au/hippocampus" rel="noopener"
+            >GitHub</a
+          >
+          <button
+            id="theme-toggle"
+            class="theme-toggle"
+            type="button"
+            aria-label="Toggle colour theme"
+            title="Toggle colour theme"
+          >
+            <svg
+              class="icon-sun"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <use href="#icon-sun" />
+            </svg>
+            <svg
+              class="icon-moon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <use href="#icon-moon" />
+            </svg>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="wrap hero-inner">
+          <p class="eyebrow">Finite memory, done right</p>
+          <h1 class="hero-title">
+            A biologically-inspired memory engine that
+            <span class="accent">remembers what matters</span>.
+          </h1>
+          <p class="hero-sub">
+            Hippocampus is a finite storage engine for log retention, audit
+            trails, and context management. Instead of expiring data by age, it
+            continuously weighs significance, recall, and relationships —
+            keeping the highest-value context and gracefully forgetting the
+            noise.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#demos">Explore the live demos</a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/fastbean-au/hippocampus"
+              rel="noopener"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-github" />
+              </svg>
+              View on GitHub
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section id="how" class="section">
+        <div class="wrap">
+          <h2 class="section-title">Memory, modelled on the brain</h2>
+          <p class="section-lede">
+            Traditional stores lean on TTLs and FIFO queues, where age alone
+            decides what survives. Hippocampus applies principles of human
+            memory consolidation instead.
+          </p>
+
+          <div class="grid features">
+            <article class="card">
+              <h3>Relative significance</h3>
+              <p>
+                Insert events dynamically relative to their neighbours —
+                <code>ABOVE</code>, <code>BELOW</code>, or
+                <code>BETWEEN</code> — with no rigid, static importance scale to
+                maintain.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Reinforcement through recall</h3>
+              <p>
+                Querying or accessing a record strengthens its retention weight,
+                protecting high-demand operational data from decay.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Sleep &amp; consolidation</h3>
+              <p>
+                Periodic background cycles apply decay models, compact space,
+                and distil clusters of episodic detail into compact semantic
+                summaries.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Durable &amp; compliance-safe</h3>
+              <p>
+                Embedded or centralised, backed by SQLite, PostgreSQL, or MySQL
+                — with minimum retention floors that hold regardless of storage
+                pressure.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="demos" class="section section-alt">
+        <div class="wrap">
+          <h2 class="section-title">Two live demos</h2>
+          <p class="section-lede">
+            Both run a compressed decay clock, so forgetting, summarisation, and
+            eviction play out in minutes rather than days. Sign in as
+            <code>reader-demo</code>, <code>writer-demo</code>, or
+            <code>admin-demo</code> — the password is the role.
+          </p>
+
+          <div class="grid demos">
+            <article class="card demo-card">
+              <div class="demo-tag">book</div>
+              <h3>Summarise &amp; forget</h3>
+              <p>
+                <em>Great Expectations</em> is reloaded daily, then summarised
+                and left to decay. Watch clusters of episodic memories
+                consolidate into semantic summaries as the store forgets the
+                rest.
+              </p>
+              <a
+                class="btn btn-primary"
+                href="https://book.hippocampus-demo.com/ui"
+                rel="noopener"
+              >
+                Open the book console
+              </a>
+            </article>
+
+            <article class="card demo-card">
+              <div class="demo-tag">logs</div>
+              <h3>Consolidate &amp; evict</h3>
+              <p>
+                A continuous log trickle flows in and is reaped by consolidation
+                and capacity eviction, so an ever-growing stream stays bounded
+                while the most significant events survive.
+              </p>
+              <a
+                class="btn btn-primary"
+                href="https://logs.hippocampus-demo.com/ui"
+                rel="noopener"
+              >
+                Open the logs console
+              </a>
+            </article>
+          </div>
+
+          <p class="demos-note">
+            New sign-ins may take a moment while the demo stacks warm up.
+            Telemetry for both runs in a shared
+            <a href="https://grafana.hippocampus-demo.com" rel="noopener"
+              >Grafana</a
+            >.
+          </p>
+        </div>
+      </section>
+
+      <section class="section cta">
+        <div class="wrap cta-inner">
+          <h2 class="section-title">Run it yourself in 30 seconds</h2>
+          <p class="section-lede">
+            Clone the repo and start the embedded stack — pure-Go SQLite, zero
+            external dependencies.
+          </p>
+          <pre
+            class="codeblock"
+          ><code>git clone https://github.com/fastbean-au/hippocampus.git
+cd hippocampus
+./demo/run.sh</code></pre>
+          <div class="hero-actions">
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/fastbean-au/hippocampus"
+              rel="noopener"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-github" />
+              </svg>
+              Read the docs on GitHub
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <div class="brand">
+          <svg
+            class="brand-mark"
+            width="24"
+            height="24"
+            viewBox="0 0 32 32"
+            aria-hidden="true"
+          >
+            <use href="#hc-mark" />
+          </svg>
+          <span class="brand-name">Hippocampus</span>
+        </div>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="#demos">Demos</a>
+          <a href="#how">How it works</a>
+          <a href="https://github.com/fastbean-au/hippocampus" rel="noopener"
+            >GitHub</a
+          >
+          <a
+            href="https://github.com/fastbean-au/hippocampus-gen"
+            rel="noopener"
+            >Generators</a
+          >
+        </nav>
+      </div>
+    </footer>
+
+    <!-- Shared SVG symbols -->
+    <svg
+      width="0"
+      height="0"
+      style="position: absolute"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <symbol id="hc-mark" viewBox="0 0 32 32">
+          <path
+            d="M16 3C9.4 3 5 7.6 5 13.4c0 3 1.3 5.3 3.6 7.4.9.8 1.4 1.6 1.4 2.8V27a2 2 0 0 0 2 2h1.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M16 3c6.6 0 11 4.6 11 10.4 0 3-1.3 5.3-3.6 7.4-.9.8-1.4 1.6-1.4 2.8V27a2 2 0 0 1-2 2H18.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            opacity="0.55"
+          />
+          <circle cx="16" cy="13" r="2.4" fill="currentColor" />
+          <path
+            d="M16 13c-2.2-1-4 .4-4 2.2M16 13c2.2-1 4 .4 4 2.2"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="icon-github" viewBox="0 0 24 24">
+          <path
+            fill="currentColor"
+            d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.36 1.09 2.93.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+          />
+        </symbol>
+        <symbol id="icon-sun" viewBox="0 0 24 24">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"
+            />
+          </g>
+        </symbol>
+        <symbol id="icon-moon" viewBox="0 0 24 24">
+          <path
+            fill="currentColor"
+            d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"
+          />
+        </symbol>
+      </defs>
+    </svg>
+  </body>
+</html>
