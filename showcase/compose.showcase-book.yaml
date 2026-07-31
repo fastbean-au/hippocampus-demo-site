@@ -7,7 +7,7 @@
 # Caddyfile.book).
 #
 #   BOOK_DOMAIN=book.example ACME_EMAIL=you@example.com \
-#     docker compose -f showcase/docker-compose.showcase-book.yaml up --build -d
+#     podman compose -f showcase/compose.showcase-book.yaml up --build -d
 #
 # The data generator is NOT a container here (its module pulls a private dependency a clean image
 # build cannot fetch without credentials); it runs as a host process against the published gRPC port.

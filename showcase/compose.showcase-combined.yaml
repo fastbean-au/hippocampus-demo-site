@@ -1,11 +1,11 @@
 # Hosted showcase, BOTH examples under ONE domain, on ONE host. This merges the separate book and
 # logs stacks into a single compose project so that a single Caddy owns :80/:443 (two Caddys cannot),
 # fronting both consoles plus a SHARED Keycloak and a SHARED Grafana. It is the consolidated
-# counterpart to docker-compose.showcase-book.yaml + docker-compose.showcase-logs.yaml — same server
+# counterpart to compose.showcase-book.yaml + compose.showcase-logs.yaml — same server
 # side, same split-issuer design, but one front proxy and one identity provider instead of two.
 #
 #   BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
-#     docker compose -f showcase/docker-compose.showcase-combined.yaml up --build -d
+#     podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 #
 # Everything hangs off ONE parent domain via four subdomains (defaults in parentheses):
 #   book console:  https://book.${BASE_DOMAIN}/ui       (book.hippocampus.example)

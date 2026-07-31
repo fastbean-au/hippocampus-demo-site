@@ -1,9 +1,0 @@
-# Keep the build context to just what the image needs (the Dockerfile COPYs files explicitly).
-.git
-.gitignore
-.trunk
-README.md
-LICENSE
-Dockerfile
-docker-compose.yaml
-.dockerignore

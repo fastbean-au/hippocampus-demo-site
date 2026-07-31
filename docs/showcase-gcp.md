@@ -1,7 +1,7 @@
 # Deploying the showcase to a GCP VM
 
 A runbook for standing up the two [hosted showcase](showcase.md) stacks (book and logs) on a single
-Google Compute Engine VM: the server side runs as Docker Compose, the two data generators run as
+Google Compute Engine VM: the server side runs as a Compose stack, the two data generators run as
 systemd services, and Caddy provisions TLS automatically. Read [Hosted showcase](showcase.md) first —
 this only covers the VM.
 
@@ -19,7 +19,7 @@ this only covers the VM.
 >
 > ```sh
 > BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
->   docker compose -f showcase/docker-compose.showcase-combined.yaml up --build -d
+>   podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 > ```
 >
 > The generators (step 6) then both authenticate to the one shared issuer
@@ -36,7 +36,7 @@ RAM in use.
 | ------------ | ---------------------------------------------------------------------- |
 | Machine type | `e2-standard-4` (4 vCPU / 16 GiB) minimum; `e2-standard-8` comfortable |
 | Boot disk    | 50 GiB `pd-ssd` (OpenSearch + telemetry retention)                     |
-| Image        | Ubuntu 24.04 LTS (simple Docker + Go install)                          |
+| Image        | Ubuntu 24.04 LTS (simple Podman + Go install)                          |
 | Region       | anywhere close to your viewers                                         |
 
 ## 2. DNS
@@ -73,12 +73,15 @@ gcloud compute firewall-rules create hippocampus-showcase-web \
 
 (SSH is covered by GCP's default rule / IAP.)
 
-## 4. Install Docker and Go
+## 4. Install Podman and Go
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-v2 golang-go git
-sudo usermod -aG docker "$USER"   # log out/in for this to take effect
+sudo apt-get install -y podman podman-compose golang-go git
+
+# Rootless Podman can't bind ports below 1024, and Caddy needs 80/443. Allow it:
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-podman-ports.conf
+sudo sysctl --system
 ```
 
 ## 5. Bring up the stacks
@@ -95,13 +98,13 @@ the compose files. Then:
 
 ```sh
 BOOK_DOMAIN=book.example ACME_EMAIL=you@example.com \
-  docker compose -f showcase/docker-compose.showcase-book.yaml up --build -d
+  podman compose -f showcase/compose.showcase-book.yaml up --build -d
 
 LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
-  docker compose -f showcase/docker-compose.showcase-logs.yaml up --build -d
+  podman compose -f showcase/compose.showcase-logs.yaml up --build -d
 ```
 
-Watch the certificates arrive (`docker compose ... logs -f caddy`), then browse to
+Watch the certificates arrive (`podman compose ... logs -f caddy`), then browse to
 `https://book.example/ui` and sign in as `admin-demo` / `writer-demo` / `reader-demo`.
 
 ## 6. Run the generators as systemd services
@@ -188,10 +191,10 @@ journalctl -u hippocampus-gen-book -f
 
 ## 7. Operate
 
-- **Restart a stack:** `docker compose -f showcase/docker-compose.showcase-book.yaml restart`.
-- **Update:** `git pull`, then `docker compose ... up --build -d`, and rebuild the generator binaries.
+- **Restart a stack:** `podman compose -f showcase/compose.showcase-book.yaml restart`.
+- **Update:** `git pull`, then `podman compose ... up --build -d`, and rebuild the generator binaries.
   Keycloak keeps its realm (named volume); the book store is purged each cycle anyway.
-- **Reset everything:** `docker compose ... down -v` drops the named volumes (Postgres, OpenSearch,
+- **Reset everything:** `podman compose ... down -v` drops the named volumes (Postgres, OpenSearch,
   Keycloak, Caddy certs) for a clean slate — the realm re-imports on next start.
 - **Certificates** live in the `*-caddy-data` volume and renew automatically; keep 80/443 reachable.
 - **Cost:** shut the VM down when not demoing (`gcloud compute instances stop hippocampus-showcase`);
@@ -200,7 +203,7 @@ journalctl -u hippocampus-gen-book -f
 ## A lite stack for an e2-micro
 
 The full stack above runs Postgres + OpenSearch + Keycloak + otel-lgtm + hippocampus + Caddy, twice —
-budget ~10 GiB of RAM. The **lite stack** (`showcase/docker-compose.showcase-lite.yaml`) is the same
+budget ~10 GiB of RAM. The **lite stack** (`showcase/compose.showcase-lite.yaml`) is the same
 console trimmed down to fit a single **`e2-micro` (0.25 vCPU / 1 GiB)**: it drops Postgres (SQLite
 instead), OpenSearch (no content-search tab), and otel-lgtm (no Grafana dashboards), and it replaces
 self-hosted Keycloak with **hosted Auth0** — so there is no JVM on the box at all. What remains is two
@@ -320,14 +323,15 @@ Only 80/443 face the internet; gRPC stays VM-local. SSH in:
 gcloud compute ssh hippocampus-lite --project=GCP_PROJECT --zone=GCP_ZONE
 ```
 
-### Phase 4 — Install Docker (on the VM)
+### Phase 4 — Install Podman (on the VM)
 
 ```sh
-sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
-sudo usermod -aG docker "$USER"
-```
+sudo apt-get update && sudo apt-get install -y podman podman-compose git
 
-Log out and back in (`exit`, then `gcloud compute ssh …` again) for the group to take effect.
+# Rootless Podman can't bind ports below 1024, and Caddy needs 80/443. Allow it:
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-podman-ports.conf
+sudo sysctl --system
+```
 
 > **Do not install Go on the box** — the compiler can OOM a 1 GiB machine. The generator is
 > cross-compiled elsewhere in Phase 6.
@@ -342,14 +346,14 @@ LITE_DOMAIN=DOMAIN ACME_EMAIL=ACME_EMAIL \
   AUTH0_AUDIENCE=AUTH0_AUDIENCE \
   AUTH0_CLIENT_ID=AUTH0_CLIENT_ID \
   AUTH0_ROLES_CLAIM=AUTH0_ROLES_CLAIM \
-  docker compose -f showcase/docker-compose.showcase-lite.yaml up --build -d
+  podman compose -f showcase/compose.showcase-lite.yaml up --build -d
 ```
 
 The first build compiles the Go image and is slow (several minutes) on a quarter-core — that is
 one-time. Watch Caddy obtain the certificate (this confirms DNS + 80/443 are right):
 
 ```sh
-docker compose -f showcase/docker-compose.showcase-lite.yaml logs -f caddy
+podman compose -f showcase/compose.showcase-lite.yaml logs -f caddy
 # wait for "certificate obtained successfully" for DOMAIN, then Ctrl-C
 ```
 
@@ -424,10 +428,10 @@ journalctl -u hippocampus-gen-lite -f
 
 ### Phase 7 — Operate
 
-- **Logs:** `docker compose -f showcase/docker-compose.showcase-lite.yaml logs -f hippocampus`.
-- **Restart:** `docker compose -f showcase/docker-compose.showcase-lite.yaml restart`.
-- **Update:** `git pull`, `docker compose … up --build -d`, and re-`scp` the generator if it changed.
-- **Wipe and reset:** `docker compose … down -v` drops the SQLite store and Caddy certs.
+- **Logs:** `podman compose -f showcase/compose.showcase-lite.yaml logs -f hippocampus`.
+- **Restart:** `podman compose -f showcase/compose.showcase-lite.yaml restart`.
+- **Update:** `git pull`, `podman compose … up --build -d`, and re-`scp` the generator if it changed.
+- **Wipe and reset:** `podman compose … down -v` drops the SQLite store and Caddy certs.
 - **Cost:** `gcloud compute instances stop hippocampus-lite` when idle — the static IP and disk
   persist; `start` when you want it back.
 

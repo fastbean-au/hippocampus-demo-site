@@ -8,7 +8,7 @@ This repo holds two things for the Hippocampus demo:
 
 1. **The static landing page** — plain `index.html` + `assets/` (CSS, JS, favicon) at the repo root,
    served by Caddy. **There is no build step for the site itself**; the files are served as-is. The
-   only build is the Docker image that packages them into Caddy.
+   only build is the container image that packages them into Caddy.
 2. **The hosted showcase** — the runnable demo stacks under [`showcase/`](showcase/) (book / logs /
    combined / lite compose files plus their configs, Caddyfiles, Keycloak realm, and Postgres init)
    and their documentation under [`docs/`](docs/) ([`docs/showcase.md`](docs/showcase.md) is the
@@ -26,12 +26,12 @@ trunk check                      # whole repo
 trunk check <files...>           # specific files
 
 # Bring up the showcase stack (creates the `hippocampus-shared` network the site joins)
-docker compose -f showcase/docker-compose.showcase-combined.yaml up -d
+podman compose -f showcase/compose.showcase-combined.yaml up -d
 
-# Build + deploy the landing site (requires Docker; the showcase stack must be up first — see below)
-docker compose up -d --build
+# Build + deploy the landing site (requires a container engine; the showcase stack must be up first — see below)
+podman compose up -d --build
 
-# Local preview without Docker (serves the repo root on :8000)
+# Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000
 ```
 
@@ -49,19 +49,19 @@ lifecycle stays independent of the running demos:
   network `hippocampus-shared`. Both are conventions it defines itself. Run the showcase without
   the site project up and the apex simply 502s while every subdomain keeps working.
 - **The site project depends on the showcase**, which is the correct direction. The root
-  `docker-compose.yaml` runs the site as its own project (`hippocampus-site`) that joins
+  `compose.yaml` runs the site as its own project (`hippocampus-site`) that joins
   `hippocampus-shared` as an **external** network. The front Caddy reaches it by service name over
-  Docker DNS — exactly how the `book` / `logs` / `auth` / `grafana` services are proxied.
+  container DNS — exactly how the `book` / `logs` / `auth` / `grafana` services are proxied.
 
 Consequence: the site can be deployed, restarted, or updated independently of the running demos.
 The showcase-side hooks are `showcase/caddy/Caddyfile.combined` and
-`showcase/docker-compose.showcase-combined.yaml`; changes that touch the integration must keep the
+`showcase/compose.showcase-combined.yaml`; changes that touch the integration must keep the
 two conventions (the upstream name `hippocampus-site` and the network name `hippocampus-shared`)
-consistent across the root `docker-compose.yaml` and those two files.
+consistent across the root `compose.yaml` and those two files.
 
 `Caddyfile` (this repo) is the **container's internal** config — plain HTTP on `:80`, no TLS.
-`Dockerfile` bakes the static files into `caddy:2`, so the image is self-contained with no host
-paths. Updating copy means editing the files and re-running `docker compose up -d --build`.
+`Containerfile` bakes the static files into `caddy:2`, so the image is self-contained with no host
+paths. Updating copy means editing the files and re-running `podman compose up -d --build`.
 
 ## Constraints when editing
 

@@ -10,20 +10,20 @@ pieces:
   published `ghcr.io/fastbean-au/hippocampus` image; the service source is the separate
   [`hippocampus`](https://github.com/fastbean-au/hippocampus) repo.
 
-The two are separate Docker Compose projects: bring the showcase up first (it creates the shared
+The two are separate Compose projects: bring the showcase up first (it creates the shared
 network), then the landing page joins it.
 
 ```sh
 # 1. the showcase (creates the hippocampus-shared network)
-docker compose -f showcase/docker-compose.showcase-combined.yaml up -d
+podman compose -f showcase/compose.showcase-combined.yaml up -d
 
 # 2. the landing page (joins that network)
-docker compose up -d --build
+podman compose up -d --build
 ```
 
 ## How it's served
 
-It deploys as its **own** Docker Compose project, independent of the showcase's lifecycle. The
+It deploys as its **own** Compose project, independent of the showcase's lifecycle. The
 showcase's front Caddy reverse-proxies the apex domain to this container by service name over a
 shared network — so the showcase has no dependency on this repo, and this site can be brought
 up, down, or updated without touching the running demos.
@@ -41,7 +41,7 @@ The showcase stack must be up first (it creates the `hippocampus-shared` network
 this repo:
 
 ```sh
-docker compose up -d --build
+podman compose up -d --build
 ```
 
 The site is live at the showcase's apex domain (`https://${BASE_DOMAIN}/`), with TLS handled by
@@ -52,5 +52,5 @@ the front Caddy.
 Edit `index.html` / `assets/`, then rebuild and redeploy:
 
 ```sh
-docker compose up -d --build
+podman compose up -d --build
 ```

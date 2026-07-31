@@ -12,8 +12,8 @@ generators:
 
 The service configs are [`showcase/config.showcase-book.json`](../showcase/config.showcase-book.json) and
 [`showcase/config.showcase-logs.json`](../showcase/config.showcase-logs.json); the compose stacks are
-[`showcase/docker-compose.showcase-book.yaml`](../showcase/docker-compose.showcase-book.yaml) and
-[`…-logs.yaml`](../showcase/docker-compose.showcase-logs.yaml). This document covers the
+[`showcase/compose.showcase-book.yaml`](../showcase/compose.showcase-book.yaml) and
+[`…-logs.yaml`](../showcase/compose.showcase-logs.yaml). This document covers the
 identity-provider setup and how to run the stacks; the per-cloud VM provisioning is a separate
 runbook — [GCP](showcase-gcp.md) or [OCI](showcase-oci.md).
 
@@ -157,17 +157,17 @@ console `redirectUris` already list `https://book.hippocampus.example/ui` /
 > imports [`realm-hippocampus.json`](../showcase/keycloak/realm-hippocampus.json) only into an **empty**
 > data volume — editing the file after the volume exists has no effect. If you change `redirectUris`
 > (or any realm setting) on an already-running stack, drop just the Keycloak volume and bring it back
-> up so it re-imports: `docker compose -f <file> down`, then remove that stack's Keycloak volume by
+> up so it re-imports: `podman compose -f <file> down`, then remove that stack's Keycloak volume by
 > name (`book-keycloak-data` / `logs-keycloak-data` / `combined-keycloak-data`, prefixed by the
-> compose project — find it with `docker volume ls`) so Postgres/OpenSearch survive, then
-> `docker compose -f <file> up -d`.
+> compose project — find it with `podman volume ls`) so Postgres/OpenSearch survive, then
+> `podman compose -f <file> up -d`.
 
 ```sh
 BOOK_DOMAIN=book.example ACME_EMAIL=you@example.com \
-  docker compose -f showcase/docker-compose.showcase-book.yaml up --build -d
+  podman compose -f showcase/compose.showcase-book.yaml up --build -d
 
 LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
-  docker compose -f showcase/docker-compose.showcase-logs.yaml up --build -d
+  podman compose -f showcase/compose.showcase-logs.yaml up --build -d
 ```
 
 Sign in to `https://book.example/ui` as `admin-demo` / `writer-demo` / `reader-demo` (password = the
@@ -202,7 +202,7 @@ Running these unattended (a systemd unit per stack) is covered in the per-cloud 
 The book and logs compose files above each ship their _own_ Caddy binding `:80`/`:443` and their own
 Keycloak on an `auth.` subdomain — two of everything, across two domains. When you want **both
 examples under one parent domain on one host**, the merged stack
-[`showcase/docker-compose.showcase-combined.yaml`](../showcase/docker-compose.showcase-combined.yaml)
+[`showcase/compose.showcase-combined.yaml`](../showcase/compose.showcase-combined.yaml)
 (Caddyfile [`showcase/caddy/Caddyfile.combined`](../showcase/caddy/Caddyfile.combined)) folds them into a
 single compose project: **one Caddy** (two Caddys cannot share the host ports), **one shared
 Keycloak**, **one shared Grafana**, and **one shared pair of data stores** — a single Postgres (a
@@ -211,7 +211,7 @@ each rather than a pair. Everything hangs off a single `BASE_DOMAIN`:
 
 ```sh
 BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
-  docker compose -f showcase/docker-compose.showcase-combined.yaml up --build -d
+  podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 ```
 
 That serves four subdomains of the one domain — point A/AAAA records for each (or a single
@@ -262,7 +262,7 @@ differ). For a real domain, set `BASE_DOMAIN` and change the console client's `r
 
 The book/logs stacks each run Postgres + OpenSearch + Keycloak + otel-lgtm behind Caddy — together
 they want ~10 GiB of RAM. When that is too much (a single tiny VM, a throwaway demo), the **lite
-stack** [`showcase/docker-compose.showcase-lite.yaml`](../showcase/docker-compose.showcase-lite.yaml)
+stack** [`showcase/compose.showcase-lite.yaml`](../showcase/compose.showcase-lite.yaml)
 (config [`showcase/config.showcase-lite.json`](../showcase/config.showcase-lite.json)) strips it to two
 containers — hippocampus on **SQLite** plus Caddy — and moves auth to **hosted [Auth0](#auth0-saas)**,
 so there is no JVM on the box. It fits a **0.25 vCPU / 1 GiB** machine (~500 MiB in use; the quarter
@@ -279,7 +279,7 @@ LITE_DOMAIN=demo.example ACME_EMAIL=you@example.com \
   AUTH0_AUDIENCE=https://hippocampus.api \
   AUTH0_CLIENT_ID=<console SPA client id> \
   AUTH0_ROLES_CLAIM=https://hippocampus.example/roles \
-  docker compose -f showcase/docker-compose.showcase-lite.yaml up --build -d
+  podman compose -f showcase/compose.showcase-lite.yaml up --build -d
 ```
 
 The full walkthrough — Auth0 setup, the machine-to-machine generator, and the systemd unit — is the

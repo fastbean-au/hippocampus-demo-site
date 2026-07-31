@@ -1,0 +1,9 @@
+# Keep the build context to just what the image needs (the Containerfile COPYs files explicitly).
+.git
+.gitignore
+.trunk
+README.md
+LICENSE
+Containerfile
+compose.yaml
+.containerignore

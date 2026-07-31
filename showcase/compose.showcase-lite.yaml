@@ -9,7 +9,7 @@
 #     AUTH0_AUDIENCE=https://hippocampus.api \
 #     AUTH0_CLIENT_ID=<console SPA client id> \
 #     AUTH0_ROLES_CLAIM=https://hippocampus.example/roles \
-#     docker compose -f showcase/docker-compose.showcase-lite.yaml up --build -d
+#     podman compose -f showcase/compose.showcase-lite.yaml up --build -d
 #
 # The data generator is NOT a container here (its module pulls a private dependency a clean image
 # build cannot fetch without credentials); it runs as a host process against the loopback-only gRPC
