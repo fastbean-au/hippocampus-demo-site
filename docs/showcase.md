@@ -281,6 +281,36 @@ sudo ./showcase/install-ubuntu.sh \
 Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.` subdomains at the host (80/443
 reachable) so Caddy can provision TLS, and the self-driving showcase comes up on its own.
 
+#### Updating a running deployment
+
+A code or content change that only rebuilds an image does **not** need the installer — re-running it
+is the heavy path (it stops and restarts the whole stack and re-renders/re-imports the realm). Pull
+the new commits into the host's checkout and rebuild just what changed:
+
+```sh
+cd "$(systemctl show -p WorkingDirectory --value hippocampus-showcase)"   # the unit's checkout
+sudo git pull
+sudo podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
+```
+
+Name the service that changed — `hippocampus-site` for the landing page, `hippocampus-book` /
+`hippocampus-logs` for a server — or omit the name to rebuild every service. `up -d` recreates only
+what the rebuild changed and leaves the rest (Keycloak, Grafana, the data stores, the generators)
+running. **Run it as root:** the `hippocampus-showcase` unit runs Podman as root, so a rootless
+`podman` here would build against a different, empty stack.
+
+Re-run the installer instead only when the change is to the **base domain, the gen secret, or the
+Keycloak realm** — [`install-ubuntu.sh`](../showcase/install-ubuntu.sh) is what re-renders the realm and
+re-imports it (dropping the Keycloak volume) as part of restarting the unit:
+
+```sh
+sudo ./showcase/install-ubuntu.sh --base-domain hippocampus.example --acme-email you@example.com
+```
+
+> The landing site is served with `Cache-Control: public, max-age=3600, must-revalidate`, so a
+> browser that visited within the hour may show the old page until it revalidates; new visitors and
+> crawlers (the OG image and meta tags) get the rebuilt page at once.
+
 To tear it back down, [`showcase/uninstall-ubuntu.sh`](../showcase/uninstall-ubuntu.sh) reverses the
 installer — it stops and removes the systemd unit, brings the stack down, and deletes the env file.
 It keeps the named volumes (and images) by default so a re-install reuses the data; pass
