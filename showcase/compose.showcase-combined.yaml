@@ -26,8 +26,10 @@
 # SHARED KEYCLOAK: one realm (showcase/keycloak/realm-hippocampus.json) already defines the console
 # client with BOTH console redirect URIs and one hippocampus-gen client, so a single Keycloak serves
 # both examples. A token from either console is valid at either service (shared identity) — fine for a
-# demo. For a real domain, change BASE_DOMAIN AND the console client's redirectUris/webOrigins in the
-# realm to match, and change the demo secrets (Postgres, Keycloak admin, the gen client secret).
+# demo. The tracked realm's redirect URIs use the placeholder BASE_DOMAIN (hippocampus.example); for a
+# real domain install-ubuntu.sh renders a copy with BASE_DOMAIN substituted in and mounts it via
+# KEYCLOAK_REALM_FILE (a hand run would otherwise 400 with "Invalid parameter: redirect_uri"). Still
+# change the demo secrets (Postgres, Keycloak admin, the gen client secret) for anything real.
 #
 # The book/logs data stores SHARE one Postgres and one OpenSearch container (unlike the standalone
 # stacks, which run a pair of each) but stay logically ISOLATED: the shared Postgres hosts two
@@ -151,8 +153,9 @@ services:
 
   # ---- data generators (containerised): the self-driving load. Each authenticates as the
   #      hippocampus-gen client (client-credentials, admin role) to the SHARED issuer and dials its
-  #      target service by name over the `shared` network. Override GEN_SECRET to match the realm if
-  #      you change the demo secret. ----------------------------------------------------------------
+  #      target service by name over the `shared` network. GEN_SECRET must equal the realm's
+  #      hippocampus-gen client secret; install-ubuntu.sh renders the realm from GEN_SECRET so the two
+  #      always match. For a hand run, set GEN_SECRET to whatever the imported realm carries. ---------
 
   # Great Expectations, reloaded + summarised once a day under the compressed decay clock. --reset
   # purges the store at the start of every cycle - and the loop's first cycle runs immediately - so a
@@ -267,7 +270,13 @@ services:
       # ready IdP rather than racing the realm import and missing their first token.
       KC_HEALTH_ENABLED: "true"
     volumes:
-      - ./keycloak/realm-hippocampus.json:/opt/keycloak/data/import/realm.json:ro
+      # KEYCLOAK_REALM_FILE lets the imported realm be swapped for a domain-rendered copy. Default
+      # runs use the tracked template (placeholder redirect URIs). install-ubuntu.sh renders
+      # realm-hippocampus.generated.json (BASE_DOMAIN substituted into the console redirect URIs) and
+      # points this at it, so a real-domain install gets matching redirect URIs. The realm imports on
+      # an EMPTY combined-keycloak-data volume only, so install-ubuntu.sh resets that volume when the
+      # domain changes.
+      - ${KEYCLOAK_REALM_FILE:-./keycloak/realm-hippocampus.json}:/opt/keycloak/data/import/realm.json:ro
       - combined-keycloak-data:/opt/keycloak/data
     networks:
       - shared

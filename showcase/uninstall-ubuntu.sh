@@ -130,6 +130,10 @@ systemctl reset-failed "${SERVICE_NAME}.service" 2>/dev/null || true
 echo "==> Removing ${ENV_DIR}"
 rm -rf "${ENV_DIR}"
 
+# The installer renders a host-specific realm (BASE_DOMAIN substituted in) alongside the tracked
+# template; it is gitignored, so remove it to leave the checkout clean.
+rm -f "${SCRIPT_DIR}/keycloak/realm-hippocampus.generated.json"
+
 if [[ "$REMOVE_PACKAGES" -eq 1 ]]; then
   echo "==> Purging podman and podman-compose"
   export DEBIAN_FRONTEND=noninteractive

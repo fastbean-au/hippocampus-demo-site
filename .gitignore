@@ -1,0 +1,3 @@
+# Domain-rendered Keycloak realm produced by showcase/install-ubuntu.sh (BASE_DOMAIN substituted into
+# the tracked template). Host-specific; never committed.
+showcase/keycloak/realm-hippocampus.generated.json
