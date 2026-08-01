@@ -235,6 +235,10 @@ EnvironmentFile=${ENV_FILE}
 # Bring the whole stack (site + consoles + IdP + generators) up; build the site image on first run
 # and reuse the cached layers thereafter. Give the build/pull as long as it needs on a cold start.
 ExecStart=/usr/bin/podman compose -f ${COMPOSE_FILE} up -d --build
+# After the stack is up, wait for the auth path to serve and (re)start the data generators. up -d does
+# not honour their depends_on health conditions and podman does not reliably restart them after their
+# cold-start failure, so this closes the generator race. See showcase/start-generators.sh.
+ExecStartPost=/usr/bin/bash ${REPO_DIR}/showcase/start-generators.sh ${COMPOSE_FILE}
 ExecStop=/usr/bin/podman compose -f ${COMPOSE_FILE} down
 TimeoutStartSec=0
 

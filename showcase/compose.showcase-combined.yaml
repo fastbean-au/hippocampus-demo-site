@@ -46,11 +46,12 @@
 # self-driving showcase - the servers AND the load that feeds them. Each runs as the hippocampus-gen
 # client (client-credentials, admin role) against the SHARED issuer
 # https://auth.${BASE_DOMAIN}/realms/hippocampus, reaching both the issuer (via the Caddy alias) and
-# its target service by name over the `shared` network - no host processes or systemd units. They
-# gate on the front Caddy's healthcheck (which only passes once the issuer actually serves THROUGH
-# Caddy), not merely on Keycloak being internally healthy, so they never start before the auth path is
-# open - the book's first cycle then never misses its token and idles a whole period. See
-# docs/showcase.md.
+# its target service by name over the `shared` network - no host processes or systemd units. Because
+# podman-compose 1.0.6 ignores depends_on health conditions on `up -d`, the install-ubuntu.sh systemd
+# unit runs showcase/start-generators.sh as an ExecStartPost: it waits for the front Caddy's
+# healthcheck (which only passes once the issuer actually serves THROUGH Caddy) and then starts the
+# generators, so they never run before the auth path is open and the book's first cycle never misses
+# its token and idles a whole period. See docs/showcase.md.
 #
 # READ-ONLY FOR VISITORS: the realm ships a single demo/demo login, so anyone who signs in to a
 # console can browse but not mutate; the writing is done by the hippocampus-gen service account. The
@@ -83,14 +84,16 @@ services:
       - hippocampus-logs
       - keycloak
       - otel-lgtm
-    # Gate for the data generators: report healthy only once the OIDC issuer actually serves THROUGH
-    # Caddy (TLS terminated here, proxied to Keycloak) - i.e. the exact URL the generators fetch for
-    # discovery. This proves the front door is open AND Keycloak is answering behind it, so gating the
-    # generators on `caddy: service_healthy` removes their cold-start race (they used to start the
-    # instant Keycloak went healthy, before Caddy was listening, then exit on connection-refused/502
-    # and NOT restart under podman-compose). The caddy:2 image ships wget + ca-certificates, and the
-    # `auth.` network alias resolves to Caddy itself, so this is a self-contained loop with no public
-    # dependency. Nothing else gates on Caddy's health, so tying it to the issuer path is safe.
+    # Readiness signal for the data generators: report healthy only once the OIDC issuer actually
+    # serves THROUGH Caddy (TLS terminated here, proxied to Keycloak) - i.e. the exact URL the
+    # generators fetch for discovery. This proves the front door is open AND Keycloak is answering
+    # behind it. The generators used to start the instant Keycloak went healthy - before Caddy was
+    # listening - then exit on connection-refused/502 and not get restarted. podman-compose 1.0.6's
+    # `up -d` does NOT honour depends_on health conditions, so the generators cannot simply gate on
+    # this at up-time; instead the systemd unit's ExecStartPost (showcase/start-generators.sh) waits
+    # for this healthcheck to pass and then starts them. The caddy:2 image ships wget + ca-certificates
+    # and the `auth.` network alias resolves to Caddy itself, so this is a self-contained loop with no
+    # public dependency. Nothing else gates on Caddy's health, so tying it to the issuer path is safe.
     healthcheck:
       test:
         [
@@ -216,8 +219,10 @@ services:
         condition: service_started
       keycloak:
         condition: service_healthy
-      # Wait until the issuer actually serves through Caddy, not just until Keycloak is internally
-      # healthy - this is what closes the cold-start race (see the caddy healthcheck above).
+      # Intent: do not start until the issuer actually serves through Caddy, not just until Keycloak
+      # is internally healthy. podman-compose 1.0.6 IGNORES these health conditions on `up -d` (kept
+      # for correctness / a compose that honours them); the operative gate is the unit's ExecStartPost
+      # (showcase/start-generators.sh), which waits for the caddy healthcheck and then starts these.
       caddy:
         condition: service_healthy
 
@@ -245,8 +250,10 @@ services:
         condition: service_started
       keycloak:
         condition: service_healthy
-      # Wait until the issuer actually serves through Caddy, not just until Keycloak is internally
-      # healthy - this is what closes the cold-start race (see the caddy healthcheck above).
+      # Intent: do not start until the issuer actually serves through Caddy, not just until Keycloak
+      # is internally healthy. podman-compose 1.0.6 IGNORES these health conditions on `up -d` (kept
+      # for correctness / a compose that honours them); the operative gate is the unit's ExecStartPost
+      # (showcase/start-generators.sh), which waits for the caddy healthcheck and then starts these.
       caddy:
         condition: service_healthy
 
