@@ -11,7 +11,7 @@
 #
 # Requires public DNS for ${LOGS_DOMAIN}, auth.${LOGS_DOMAIN}, grafana.${LOGS_DOMAIN} → the VM.
 #   console:  https://${LOGS_DOMAIN}/ui
-#   keycloak: https://auth.${LOGS_DOMAIN}/    (admin/admin; demo users reader-demo/writer-demo/admin-demo)
+#   keycloak: https://auth.${LOGS_DOMAIN}/    (admin/admin; read-only visitor login demo/demo)
 #   grafana:  https://grafana.${LOGS_DOMAIN}/
 #   gRPC:     <vm>:50052
 

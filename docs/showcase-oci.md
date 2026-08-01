@@ -188,7 +188,7 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
 ```
 
 Watch the certificates arrive (`podman compose ... logs -f caddy`), then browse to
-`https://book.example/ui` and sign in as `reader-demo` (the read-only demo user). A challenge
+`https://book.example/ui` and sign in as `demo` / `demo` (the read-only demo user). A challenge
 that never completes almost always means the host `iptables` rules (step 3) or the NSG ingress
 weren't opened.
 

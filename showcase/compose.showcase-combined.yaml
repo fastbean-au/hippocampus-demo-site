@@ -48,7 +48,7 @@
 # wait for Keycloak to report healthy before starting so the book's first cycle does not miss its
 # token and idle a whole period. See docs/showcase.md.
 #
-# READ-ONLY FOR VISITORS: the realm ships a single reader-demo login, so anyone who signs in to a
+# READ-ONLY FOR VISITORS: the realm ships a single demo/demo login, so anyone who signs in to a
 # console can browse but not mutate; the writing is done by the hippocampus-gen service account. The
 # gRPC ports are still published for optional external tooling, but nothing needs them anymore.
 

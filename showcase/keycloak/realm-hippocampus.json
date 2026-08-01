@@ -60,14 +60,14 @@
   ],
   "users": [
     {
-      "username": "reader-demo",
+      "username": "demo",
       "enabled": true,
       "emailVerified": true,
-      "email": "reader@hippocampus.example",
-      "firstName": "Rhea",
+      "email": "demo@hippocampus.example",
+      "firstName": "Demo",
       "lastName": "Reader",
       "credentials": [
-        { "type": "password", "value": "reader", "temporary": false }
+        { "type": "password", "value": "demo", "temporary": false }
       ],
       "realmRoles": ["reader"]
     },

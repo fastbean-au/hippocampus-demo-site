@@ -62,7 +62,7 @@ A ready-to-import realm lives at
   `https://book.hippocampus.example/ui` / `https://logs.hippocampus.example/ui` placeholders);
 - a **confidential client** `hippocampus-gen` (client-credentials, `serviceAccountsEnabled`) with the
   `admin` role, for the generators — **change its `secret`** before deploying;
-- a single demo user `reader-demo` (password `reader`) so visitors who sign in to a console can
+- a single demo user `demo` (password `demo`) so visitors who sign in to a console can
   **browse but not mutate** — the showcase is read-only for people, and all writing is done by the
   `hippocampus-gen` service account. The `writer`/`admin` roles are still defined (the generator uses
   `admin`); add `writer-demo`/`admin-demo` users back if you want interactive write access.
@@ -172,7 +172,7 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
   podman compose -f showcase/compose.showcase-logs.yaml up --build -d
 ```
 
-Sign in to `https://book.example/ui` as `reader-demo` (password `reader`) and browse the read-only
+Sign in to `https://book.example/ui` as `demo` (password `demo`) and browse the read-only
 console.
 
 ### Drive it with the generators
@@ -280,6 +280,19 @@ sudo ./showcase/install-ubuntu.sh \
 
 Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.` subdomains at the host (80/443
 reachable) so Caddy can provision TLS, and the self-driving showcase comes up on its own.
+
+To tear it back down, [`showcase/uninstall-ubuntu.sh`](../showcase/uninstall-ubuntu.sh) reverses the
+installer — it stops and removes the systemd unit, brings the stack down, and deletes the env file.
+It keeps the named volumes (and images) by default so a re-install reuses the data; pass
+`--remove-volumes` to wipe the showcase data, `--remove-images` to drop the pulled/built images, and
+`--remove-packages` to purge Podman:
+
+```sh
+sudo ./showcase/uninstall-ubuntu.sh
+# --remove-volumes   also destroy Postgres/OpenSearch/Keycloak/Grafana/Caddy data
+# --remove-images    also remove the pulled/built images
+# --remove-packages  also purge podman + podman-compose
+```
 
 > **Shared identity is the trade-off.** One realm means one set of users and one signing key across
 > both examples, so a token minted by signing in to the book console is also accepted by the logs

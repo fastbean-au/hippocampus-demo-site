@@ -110,7 +110,7 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
 ```
 
 Watch the certificates arrive (`podman compose ... logs -f caddy`), then browse to
-`https://book.example/ui` and sign in as `reader-demo` (the read-only demo user).
+`https://book.example/ui` and sign in as `demo` / `demo` (the read-only demo user).
 
 ## 6. Run the generators as systemd services
 

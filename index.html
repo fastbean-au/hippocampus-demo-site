@@ -168,8 +168,13 @@
           <p class="section-lede">
             Both run a compressed decay clock, so forgetting, summarisation, and
             eviction play out in minutes rather than days. Sign in as
-            <code>reader-demo</code>, <code>writer-demo</code>, or
-            <code>admin-demo</code> — the password is the role.
+            <code>demo</code> / <code>demo</code> to browse — the consoles are
+            read-only for visitors.
+          </p>
+          <p class="section-lede">
+            These consoles are a lens on the engine, not the product itself.
+            Hippocampus is a memory store you run behind your own systems — the
+            UI is just one way to watch it work.
           </p>
 
           <div class="grid demos">
@@ -207,14 +212,28 @@
                 Open the logs console
               </a>
             </article>
+
+            <article class="card demo-card">
+              <div class="demo-tag">grafana</div>
+              <h3>Watch the telemetry</h3>
+              <p>
+                A shared Grafana charts both stacks live — memory counts,
+                consolidation and eviction rates, decay, and request latency —
+                so you can see the engine working from the outside as it forgets
+                and summarises.
+              </p>
+              <a
+                class="btn btn-primary"
+                href="https://grafana.hippocampus-demo.com"
+                rel="noopener"
+              >
+                Open Grafana
+              </a>
+            </article>
           </div>
 
           <p class="demos-note">
             New sign-ins may take a moment while the demo stacks warm up.
-            Telemetry for both runs in a shared
-            <a href="https://grafana.hippocampus-demo.com" rel="noopener"
-              >Grafana</a
-            >.
           </p>
         </div>
       </section>

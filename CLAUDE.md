@@ -21,9 +21,11 @@ This repo holds two things for the Hippocampus demo:
    [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo), so a single `up -d`
    brings up the load too. All images (servers, sidecars, generators) publish multi-arch
    (amd64 + arm64). The realm is **read-only for visitors** (one
-   `reader-demo` login); the generators write as the `hippocampus-gen` service account (`admin`).
+   `demo`/`demo` login); the generators write as the `hippocampus-gen` service account (`admin`).
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
-   Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options).
+   Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options);
+   [`showcase/uninstall-ubuntu.sh`](showcase/uninstall-ubuntu.sh) reverses it (keeping volumes and
+   images unless `--remove-volumes` / `--remove-images` are given).
 
 ## Commands
 

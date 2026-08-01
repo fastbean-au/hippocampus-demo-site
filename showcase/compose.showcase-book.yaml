@@ -17,7 +17,7 @@
 # Requires public DNS records for ${BOOK_DOMAIN}, auth.${BOOK_DOMAIN}, grafana.${BOOK_DOMAIN} → the
 # VM, with ports 80/443 reachable for the ACME challenge. Browse:
 #   console:  https://${BOOK_DOMAIN}/ui
-#   keycloak: https://auth.${BOOK_DOMAIN}/   (admin/admin; demo users reader-demo/writer-demo/admin-demo)
+#   keycloak: https://auth.${BOOK_DOMAIN}/   (admin/admin; read-only visitor login demo/demo)
 #   grafana:  https://grafana.${BOOK_DOMAIN}/
 #   gRPC:     <vm>:50051   (for the host-run generator)
 #

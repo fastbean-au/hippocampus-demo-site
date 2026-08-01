@@ -11,7 +11,7 @@
 # The combined stack is fully self-driving: it brings up the landing site, both consoles, the shared
 # Keycloak / Grafana, the data stores, AND the containerised data generators that feed them, so there
 # is nothing else to run. Visitors who sign in to a console are read-only (the realm ships a single
-# reader-demo login); the writing is done by the hippocampus-gen service account.
+# demo/demo login); the writing is done by the hippocampus-gen service account.
 #
 # ARCHITECTURE: every image (servers, sidecars, and generators) is published multi-arch, so this runs
 # on both linux/amd64 and linux/arm64 hosts.
