@@ -42,6 +42,9 @@ ENV_DIR="/etc/hippocampus-showcase"
 ENV_FILE="${ENV_DIR}/showcase.env"
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 COMPOSE_FILE="showcase/compose.showcase-combined.yaml"
+# Records the sha256 of the realm JSON currently imported into Keycloak, so a re-run can tell whether
+# the rendered realm actually changed (domain, gen secret, or a template edit) and needs re-importing.
+IMPORTED_REALM_HASH_FILE="${ENV_DIR}/realm-imported.sha256"
 
 BASE_DOMAIN=""
 ACME_EMAIL=""
@@ -56,6 +59,49 @@ die() {
 usage() {
   # Print the leading comment block (the lines between the shebang and `set -euo pipefail`) as help.
   sed -n '3,36p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Resolve THIS stack's Keycloak volume, so a reset never touches an unrelated one (a host can carry
+# leftover *_combined-keycloak-data volumes from earlier project names). The compose project defaults
+# to the basename of the compose file's directory (confirmed: `showcase`), so the volume is
+# `<project>_combined-keycloak-data`. Sets the global KC_VOLUME_RESOLVED and returns: 0 = resolved,
+# 1 = none exists yet (fresh host), 2 = the derived name is absent and the suffix is ambiguous (the
+# caller must abort rather than guess). NOTE: called via `if resolve_kc_volume`, never in a `$(...)`
+# subshell, so its non-zero returns reach the caller. Requires podman and SCRIPT_DIR to be set.
+KC_VOLUME_RESOLVED=""
+resolve_kc_volume() {
+  local project derived matches
+  project="$(basename "${SCRIPT_DIR}")"
+  derived="${project}_combined-keycloak-data"
+  KC_VOLUME_RESOLVED=""
+
+  if podman volume exists "${derived}" 2>/dev/null; then
+    KC_VOLUME_RESOLVED="${derived}"
+
+    return 0
+  fi
+
+  # Derived name absent: fall back to any compose keycloak volume, but only if it is unambiguous.
+  matches=()
+  mapfile -t matches < <(podman volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_combined-keycloak-data$' || true)
+
+  case "${#matches[@]}" in
+
+    0)
+      return 1
+      ;;
+
+    1)
+      KC_VOLUME_RESOLVED="${matches[0]}"
+
+      return 0
+      ;;
+
+    *)
+      return 2
+      ;;
+
+  esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -113,13 +159,6 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends podman podman-compose
 
-# Note the domain from any prior install BEFORE overwriting the env file, so we can tell whether the
-# base domain changed and the Keycloak realm needs re-importing (see the volume reset below).
-PREV_BASE_DOMAIN=""
-if [[ -f "${ENV_FILE}" ]]; then
-  PREV_BASE_DOMAIN="$(sed -n 's/^BASE_DOMAIN=//p' "${ENV_FILE}" | head -n1)"
-fi
-
 # Render the Keycloak realm from the tracked template, substituting two things so the running stack
 # never drifts from the realm:
 #
@@ -148,13 +187,31 @@ sed \
   -e "s|${REALM_PLACEHOLDER_SECRET}|${GEN_SECRET}|g" \
   "${REALM_TEMPLATE}" >"${REALM_GENERATED}"
 
+# Decide whether Keycloak needs to RE-import. --import-realm only imports into an empty volume and
+# skips a realm that already exists, so a changed realm (new domain, new gen secret, or a template
+# edit) will not take effect on a re-run unless we drop the volume. Compare the freshly rendered realm
+# against the hash of what was last imported (recorded after a successful start below) rather than
+# against the base domain alone - that catches every kind of change, and a plain re-run with no change
+# resets nothing. The reset itself happens in the apply phase, once the stack is down.
+NEW_REALM_HASH="$(sha256sum "${REALM_GENERATED}" | awk '{print $1}')"
+PREV_IMPORTED_HASH=""
+if [[ -f "${IMPORTED_REALM_HASH_FILE}" ]]; then
+  PREV_IMPORTED_HASH="$(cat "${IMPORTED_REALM_HASH_FILE}")"
+fi
+
+REALM_CHANGED=0
+if [[ "${NEW_REALM_HASH}" != "${PREV_IMPORTED_HASH}" ]]; then
+  REALM_CHANGED=1
+fi
+
 echo "==> Writing ${ENV_FILE}"
 install -d -m 0755 "${ENV_DIR}"
 umask 077
 cat >"${ENV_FILE}" <<EOF
 # Site-specific settings for the Hippocampus combined showcase, read by the ${SERVICE_NAME} unit and
-# interpolated into ${COMPOSE_FILE}. Written by install-ubuntu.sh; edit and re-run
-# \`systemctl restart ${SERVICE_NAME}\` to change.
+# interpolated into ${COMPOSE_FILE}. Written by install-ubuntu.sh; to change the domain or gen secret
+# re-run install-ubuntu.sh (it re-renders the realm and re-imports it when needed) rather than editing
+# here - a bare \`systemctl restart\` would not re-render or re-import the realm.
 BASE_DOMAIN=${BASE_DOMAIN}
 ACME_EMAIL=${ACME_EMAIL}
 GEN_SECRET=${GEN_SECRET}
@@ -162,22 +219,6 @@ GEN_SECRET=${GEN_SECRET}
 KEYCLOAK_REALM_FILE=${REALM_RELATIVE}
 EOF
 umask 022
-
-# The realm is imported into an EMPTY combined-keycloak-data volume only (start-dev --import-realm
-# skips a realm that already exists), so a first boot with the placeholder domain persists the wrong
-# redirect URIs. When the base domain changes (or this is a re-point of an existing box), drop the
-# Keycloak volume so the freshly rendered realm re-imports. Match on the name suffix to stay robust to
-# the compose project prefix. Only the demo realm + demo user live in that volume, so this is safe.
-if [[ "${PREV_BASE_DOMAIN}" != "${BASE_DOMAIN}" ]]; then
-  if command -v podman >/dev/null 2>&1; then
-    KC_VOLUME="$(podman volume ls --format '{{.Name}}' 2>/dev/null | grep -E 'combined-keycloak-data$' | head -n1 || true)"
-
-    if [[ -n "${KC_VOLUME}" ]]; then
-      echo "==> Base domain changed (${PREV_BASE_DOMAIN:-<none>} -> ${BASE_DOMAIN}); resetting ${KC_VOLUME} so the realm re-imports"
-      podman volume rm -f "${KC_VOLUME}" || true
-    fi
-  fi
-fi
 
 echo "==> Writing ${UNIT_FILE}"
 cat >"${UNIT_FILE}" <<EOF
@@ -201,9 +242,37 @@ TimeoutStartSec=0
 WantedBy=multi-user.target
 EOF
 
-echo "==> Enabling and starting ${SERVICE_NAME} (this builds the site image and pulls images on first run)"
 systemctl daemon-reload
-systemctl enable --now "${SERVICE_NAME}.service"
+systemctl enable "${SERVICE_NAME}.service"
+
+# Force the config to APPLY. The unit is a oneshot with RemainAfterExit, so on an already-running host
+# `enable --now` would be a no-op and the new compose/env/realm would never take effect. Bring the
+# stack down first (so the new config re-applies and the Keycloak volume is free), reset that volume
+# when the rendered realm changed, then start. On a fresh host the stop is a harmless no-op.
+echo "==> Stopping ${SERVICE_NAME} if running, to apply the new configuration"
+systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+
+if [[ "${REALM_CHANGED}" -eq 1 ]]; then
+  if resolve_kc_volume; then
+    echo "==> Rendered realm changed; resetting ${KC_VOLUME_RESOLVED} so Keycloak re-imports it"
+    podman volume rm -f "${KC_VOLUME_RESOLVED}"
+  else
+    rc=$?
+
+    if [[ "${rc}" -eq 2 ]]; then
+      die "cannot tell which Keycloak volume is this stack's; remove the stale *_combined-keycloak-data volume(s) and re-run."
+    fi
+
+    echo "==> Rendered realm changed; no existing Keycloak volume to reset (fresh host) - it will import on first start"
+  fi
+fi
+
+echo "==> Starting ${SERVICE_NAME} (this builds the site image and pulls images on first run)"
+systemctl start "${SERVICE_NAME}.service"
+
+# Record the realm that is now imported, so the next re-run only resets the volume when it truly
+# changes. Written after a successful start so a failed start does not claim a phantom import.
+echo "${NEW_REALM_HASH}" >"${IMPORTED_REALM_HASH_FILE}"
 
 cat <<EOF
 
@@ -219,5 +288,7 @@ Handy commands:
   systemctl status ${SERVICE_NAME}                       # unit state
   podman compose -f ${COMPOSE_FILE} ps                   # container state (run from ${REPO_DIR})
   podman compose -f ${COMPOSE_FILE} logs -f hippocampus-gen-book
-  systemctl restart ${SERVICE_NAME}                      # after editing ${ENV_FILE} or pulling updates
+  sudo ./showcase/install-ubuntu.sh --base-domain ... --acme-email ...   # re-apply after pulling
+                                                         # updates or changing the domain/gen secret
+                                                         # (re-renders + re-imports the realm as needed)
 EOF
