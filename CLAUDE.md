@@ -6,9 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo holds two things for the Hippocampus demo:
 
-1. **The static landing page** — plain `index.html` + `assets/` (CSS, JS, favicon) at the repo root,
-   served by Caddy. **There is no build step for the site itself**; the files are served as-is. The
-   only build is the container image that packages them into Caddy.
+1. **The static landing page** — plain `index.html` + `assets/` (CSS, JS, favicon, `og-image.png`
+   for social/link previews plus its `og-image.svg` source) at the repo root, alongside `robots.txt`
+   and `sitemap.xml` for SEO. All served by Caddy. **There is no build step for the site itself**;
+   the files are served as-is. The only build is the container image that packages them into Caddy.
+   Each of these files is `COPY`-ed explicitly in `Containerfile`, so a **new top-level static file
+   must be added there** or it won't ship in the image. `Containerfile` also stamps the sitemap's
+   `<lastmod>` with the image build date at build time, so that value is not hand-maintained — the
+   date checked into `sitemap.xml` is only a fallback for local, no-build previews.
 2. **The hosted showcase** — the runnable demo stacks under [`showcase/`](showcase/) (book / logs /
    combined / lite compose files plus their configs, Caddyfiles, Keycloak realm, and Postgres init)
    and their documentation under [`docs/`](docs/) ([`docs/showcase.md`](docs/showcase.md) is the
@@ -83,7 +88,9 @@ line above.
   assumes same-origin CSS/JS plus inline SVG only (`style-src` includes `'unsafe-inline'` solely
   for the one inline `style` attribute on the hidden SVG symbol sheet). Adding any external
   resource, inline `<script>`, or `data:`/remote image requires updating the CSP to match, or the
-  browser will silently block it.
+  browser will silently block it. The one exception in the markup is the
+  `<script type="application/ld+json">` structured-data block: it is a non-executable data block,
+  not a script, so `script-src 'self'` does not block it and no CSP change was needed for it.
 - `assets/theme.js` is loaded **non-deferred in `<head>` on purpose** so the light/dark theme is
   applied before first paint (no flash). It reads a saved choice from `localStorage` (`hc-theme`),
   else the OS preference, and only tracks OS changes while the user has made no explicit choice.

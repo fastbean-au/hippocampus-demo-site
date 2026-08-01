@@ -9,9 +9,22 @@
       content="Hippocampus is a finite, biologically-inspired memory storage engine for log retention, audit trails, and context management. Try the live book and logs demos."
     />
     <link rel="canonical" href="https://hippocampus-demo.com/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta
+      name="theme-color"
+      content="#0c0d12"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#ffffff"
+      media="(prefers-color-scheme: light)"
+    />
 
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hippocampus" />
     <meta property="og:url" content="https://hippocampus-demo.com/" />
+    <meta property="og:locale" content="en" />
     <meta
       property="og:title"
       content="Hippocampus — a finite, biologically-inspired memory engine"
@@ -20,11 +33,85 @@
       property="og:description"
       content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live book and logs demos."
     />
+    <meta
+      property="og:image"
+      content="https://hippocampus-demo.com/assets/og-image.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Hippocampus — a memory engine that remembers what matters."
+    />
+
     <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Hippocampus — a finite, biologically-inspired memory engine"
+    />
+    <meta
+      name="twitter:description"
+      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live book and logs demos."
+    />
+    <meta
+      name="twitter:image"
+      content="https://hippocampus-demo.com/assets/og-image.png"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="Hippocampus — a memory engine that remembers what matters."
+    />
 
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/styles.css" />
     <script src="assets/theme.js"></script>
+
+    <!--
+      Structured data (JSON-LD). A <script type="application/ld+json"> element is a
+      non-executable data block, so the CSP's script-src 'self' does not block it — no
+      CSP change is needed. Keep the facts here in sync with the copy above.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://hippocampus-demo.com/#website",
+            "url": "https://hippocampus-demo.com/",
+            "name": "Hippocampus",
+            "description": "A finite, biologically-inspired memory storage engine for log retention, audit trails, and context management.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://hippocampus-demo.com/#org" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://hippocampus-demo.com/#org",
+            "name": "fastbean-au",
+            "url": "https://github.com/fastbean-au"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Hippocampus",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Linux, macOS, Windows",
+            "description": "A finite, biologically-inspired memory storage engine. Instead of expiring data by age, it continuously weighs significance, recall, and relationships — keeping the highest-value context and gracefully forgetting the noise. Backed by SQLite, PostgreSQL, or MySQL.",
+            "url": "https://hippocampus-demo.com/",
+            "image": "https://hippocampus-demo.com/assets/og-image.png",
+            "softwareHelp": "https://github.com/fastbean-au/hippocampus",
+            "codeRepository": "https://github.com/fastbean-au/hippocampus",
+            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch",
+            "publisher": { "@id": "https://hippocampus-demo.com/#org" },
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -238,6 +325,59 @@
         </div>
       </section>
 
+      <section id="stack" class="section">
+        <div class="wrap">
+          <h2 class="section-title">Fits the stack you already run</h2>
+          <p class="section-lede">
+            Hippocampus is infrastructure, not a walled garden — it speaks the
+            protocols your services and agents already use, runs on the database
+            you already operate, and layers optional integrations on top.
+          </p>
+
+          <div class="grid features">
+            <article class="card">
+              <h3>APIs &amp; interfaces</h3>
+              <p>
+                Talk to it over an <strong>HTTP/JSON gateway</strong>, browse
+                the embedded web console, or give an AI agent long-term memory
+                through the built-in
+                <strong>Model Context Protocol (MCP)</strong> server — works
+                with Claude Desktop, Claude Code, or any MCP host.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Storage backends</h3>
+              <p>
+                The same engine runs embedded on pure-Go
+                <strong>SQLite</strong> (WAL) or centralised on
+                <strong>PostgreSQL</strong> or <strong>MySQL</strong> — one
+                consolidating node alongside any number of stateless read/write
+                replicas.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Integrations</h3>
+              <p>
+                Optional <strong>OpenSearch</strong> content search, local
+                <strong>Ollama</strong> summarisation, an
+                <strong>OpenTelemetry</strong> Collector exporter that turns log
+                records into memories (severity drives significance), and an
+                <strong>Obsidian</strong> plugin for your vault.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Runtime &amp; security</h3>
+              <p>
+                A single pure-<strong>Go</strong> binary, published multi-arch
+                (amd64 + arm64), with <strong>OIDC</strong> (Auth0, Keycloak, or
+                any provider), <strong>JWT</strong>, and <strong>TLS</strong>
+                throughout.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section class="section cta">
         <div class="wrap cta-inner">
           <h2 class="section-title">Run it yourself in 30 seconds</h2>
@@ -290,11 +430,6 @@ cd hippocampus
           <a href="#how">How it works</a>
           <a href="https://github.com/fastbean-au/hippocampus" rel="noopener"
             >GitHub</a
-          >
-          <a
-            href="https://github.com/fastbean-au/hippocampus-gen"
-            rel="noopener"
-            >Generators</a
           >
         </nav>
       </div>
