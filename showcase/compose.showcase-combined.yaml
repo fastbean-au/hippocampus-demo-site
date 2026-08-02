@@ -78,8 +78,14 @@ services:
           - "logs.${BASE_DOMAIN:-hippocampus.example}"
           - "auth.${BASE_DOMAIN:-hippocampus.example}"
           - "grafana.${BASE_DOMAIN:-hippocampus.example}"
+    # NOTE: hippocampus-site is deliberately NOT a depends_on here. Caddy tolerates a down apex (the
+    # apex block just 502s while every subdomain keeps working), so gating caddy on the site buys
+    # nothing at start-up - and it makes the site impossible to redeploy on its own: a depends_on is a
+    # podman `--requires` edge, so with it in place `podman rm` of the site is refused (caddy, and the
+    # generators behind it, "require" it) and compose silently restarts the old container instead of
+    # swapping in the rebuilt image. Leaving the site out lets showcase/deploy-site.sh recreate just the
+    # site with no full-stack bounce. See docs/showcase.md "Updating a running deployment".
     depends_on:
-      - hippocampus-site
       - hippocampus-book
       - hippocampus-logs
       - keycloak

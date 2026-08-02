@@ -38,8 +38,14 @@ the front Caddy.
 
 ## Update the site
 
-Edit `index.html` / `assets/`, then rebuild and redeploy just the site (the demos keep running):
+Edit `index.html` / `assets/`, then rebuild and redeploy just the site (the rest of the stack keeps
+running, and the apex stays up throughout):
 
 ```sh
-podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
+sudo ./showcase/deploy-site.sh
 ```
+
+`deploy-site.sh` rebuilds the site image and swaps the container in behind the front Caddy with no
+apex downtime. Do **not** reach for `podman compose up -d --build hippocampus-site` instead: on this
+stack's podman-compose (1.0.6) it can't recreate the running container and silently restarts the old
+one, so the rebuilt image never goes live.

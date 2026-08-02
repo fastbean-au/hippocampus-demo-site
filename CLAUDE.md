@@ -44,8 +44,11 @@ trunk check <files...>           # specific files
 # built from the repo-root Containerfile as the `hippocampus-site` service; requires a container engine)
 podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 
-# Rebuild + redeploy just the site after editing index.html / assets (leaves the demos running)
-podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
+# Rebuild + redeploy just the site after editing index.html / assets (leaves the rest of the stack
+# running, no apex downtime). Do NOT use `up -d --build hippocampus-site` for this: podman-compose
+# 1.0.6 can't recreate the existing container in place and silently restarts the OLD one, so the
+# rebuilt image never goes live. On a live host run this as root; it also loads the unit's env file.
+sudo ./showcase/deploy-site.sh
 
 # Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000
@@ -79,8 +82,12 @@ combined stack; the `book` / `logs` / `lite` variants have no apex block or shar
 
 `Caddyfile` (this repo, at the root) is the **site container's internal** config — plain HTTP on
 `:80`, no TLS. `Containerfile` (also at the root) bakes the static files into `caddy:2`. Updating
-copy means editing `index.html` / `assets/` and re-running the `up -d --build hippocampus-site`
-line above.
+copy means editing `index.html` / `assets/` and re-running `showcase/deploy-site.sh`, which rebuilds
+the site image and swaps the container in behind the front Caddy with no apex downtime (it brings up
+an overlapping second backend on the `hippocampus-site` network alias, removes the old container —
+possible only because caddy no longer `depends_on` the site — then drops the temp backend). A plain
+`podman compose up -d --build hippocampus-site` does **not** work on this stack's podman-compose
+(1.0.6): with no `--replace` it hits the existing container's name and silently restarts the old one.
 
 ## Constraints when editing
 

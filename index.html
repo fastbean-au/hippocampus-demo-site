@@ -251,10 +251,11 @@
 
       <section id="demos" class="section section-alt">
         <div class="wrap">
-          <h2 class="section-title">Two live demos</h2>
+          <h2 class="section-title">See it live</h2>
           <p class="section-lede">
-            Both run a compressed decay clock, so forgetting, summarisation, and
-            eviction play out in minutes rather than days. Sign in as
+            The two consoles run a compressed decay clock, so forgetting,
+            summarisation, and eviction play out in minutes rather than days.
+            Sign in as
             <code>demo</code> / <code>demo</code> to browse — the consoles are
             read-only for visitors.
           </p>
@@ -356,24 +357,32 @@
               </p>
             </article>
             <article class="card">
-              <h3>Event sourcing</h3>
+              <h3>Data ingestion</h3>
               <p>
-                Bridge your message queues and buses straight into memory —
-                event sourcing connectors ingest from <strong>Kafka</strong>,
+                The streams your systems already emit become long-lived,
+                consolidating memories with no extra plumbing. Event-sourcing
+                connectors ingest from <strong>Kafka</strong>,
                 <strong>NATS</strong>, <strong>RabbitMQ</strong>, and
-                <strong>MQTT</strong>, so the streams your systems already emit
-                become long-lived, consolidating memories with no extra
-                plumbing.
+                <strong>MQTT</strong>, and an <strong>OpenTelemetry</strong>
+                Collector exporter turns log records into memories, with
+                severity driving significance.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Extend the core</h3>
+              <p>
+                Optional back-ends layer extra capability onto the engine:
+                <strong>OpenSearch</strong> for full-text content search across
+                memories, and local <strong>Ollama</strong> summarisation that
+                runs on your own hardware.
               </p>
             </article>
             <article class="card">
               <h3>Integrations</h3>
               <p>
-                Optional <strong>OpenSearch</strong> content search, local
-                <strong>Ollama</strong> summarisation, an
-                <strong>OpenTelemetry</strong> Collector exporter that turns log
-                records into memories (severity drives significance), and an
-                <strong>Obsidian</strong> plugin for your vault.
+                An <strong>Obsidian</strong> plugin uses Hippocampus as the
+                storage backend for your vault, so your notes live in the same
+                engine as the rest of your long-term memory.
               </p>
             </article>
             <article class="card">
