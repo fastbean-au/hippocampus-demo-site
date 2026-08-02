@@ -283,21 +283,33 @@ reachable) so Caddy can provision TLS, and the self-driving showcase comes up on
 
 #### Updating a running deployment
 
-A code or content change that only rebuilds an image does **not** need the installer — re-running it
-is the heavy path (it stops and restarts the whole stack and re-renders/re-imports the realm). Pull
-the new commits into the host's checkout and rebuild just what changed:
+Pull the new commits into the host's checkout, then **restart the systemd unit** — its `ExecStart` is
+`up -d --build`, so the restart rebuilds any changed images (the landing site included) and recreates
+the containers:
 
 ```sh
 cd "$(systemctl show -p WorkingDirectory --value hippocampus-showcase)"   # the unit's checkout
 sudo git pull
-sudo podman compose -f showcase/compose.showcase-combined.yaml up -d --build hippocampus-site
+sudo systemctl restart hippocampus-showcase
 ```
 
-Name the service that changed — `hippocampus-site` for the landing page, `hippocampus-book` /
-`hippocampus-logs` for a server — or omit the name to rebuild every service. `up -d` recreates only
-what the rebuild changed and leaves the rest (Keycloak, Grafana, the data stores, the generators)
-running. **Run it as root:** the `hippocampus-showcase` unit runs Podman as root, so a rootless
-`podman` here would build against a different, empty stack.
+`restart` runs the unit's `down` + `up -d --build` + `start-generators` in one step and — crucially —
+loads the unit's `EnvironmentFile` (`/etc/hippocampus-showcase/showcase.env`), so `BASE_DOMAIN` and
+`ACME_EMAIL` are the real deployment values. It is a full-stack bounce (≈1–2 min while Keycloak
+re-inits), but it keeps every named volume, so the realm is **not** re-imported and no data is lost.
+
+> **Do not drive `podman compose` on the host by hand** to redeploy — neither
+> `up -d --build hippocampus-site` nor a bare `up -d`. On this stack's podman-compose (1.0.6) it fails
+> two ways:
+>
+> - **It can't recreate a depended-on service.** caddy and the generators `depends_on`
+>   `hippocampus-site` (a podman `--requires` edge), so `podman rm` of the site is refused and compose
+>   silently falls back to _restarting the old container_ — the rebuilt image never goes live.
+> - **It bypasses the `EnvironmentFile`.** A manual invocation does not read `showcase.env`, so
+>   `BASE_DOMAIN` falls back to the compose default `hippocampus.example`; caddy then holds no cert for
+>   the real domain and the generators cannot reach the issuer, and the stack comes up broken.
+>
+> `systemctl restart` is the supported redeploy path here.
 
 Re-run the installer instead only when the change is to the **base domain, the gen secret, or the
 Keycloak realm** — [`install-ubuntu.sh`](../showcase/install-ubuntu.sh) is what re-renders the realm and
