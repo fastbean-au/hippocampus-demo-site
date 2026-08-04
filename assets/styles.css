@@ -393,12 +393,6 @@ code {
   align-self: flex-start;
 }
 
-.demos-note {
-  margin: 28px 0 0;
-  font-size: 0.95rem;
-  color: var(--text-faint);
-}
-
 .try-local {
   margin-top: 44px;
   padding-top: 40px;
@@ -414,10 +408,6 @@ code {
 }
 
 /* CTA */
-.cta-inner {
-  max-width: 720px;
-}
-
 .codeblock {
   margin: 0 0 28px;
   padding: 20px 22px;
