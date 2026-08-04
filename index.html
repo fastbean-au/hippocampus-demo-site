@@ -6,7 +6,7 @@
     <title>Hippocampus — a finite, biologically-inspired memory engine</title>
     <meta
       name="description"
-      content="Hippocampus is a finite, biologically-inspired memory storage engine for log retention, audit trails, and context management. Try the live book and logs demos."
+      content="Hippocampus is a storage engine that keeps your most significant records and gracefully forgets the rest — bounded retention for logs, audit trails, and AI-agent memory, with no TTL rules. Try the live book and logs demos."
     />
     <link rel="canonical" href="https://hippocampus-demo.com/" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -66,6 +66,7 @@
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/styles.css" />
     <script src="assets/theme.js"></script>
+    <script src="assets/copy.js" defer></script>
 
     <!--
       Structured data (JSON-LD). A <script type="application/ld+json"> element is a
@@ -101,7 +102,7 @@
             "image": "https://hippocampus-demo.com/assets/og-image.png",
             "softwareHelp": "https://github.com/fastbean-au/hippocampus",
             "codeRepository": "https://github.com/fastbean-au/hippocampus",
-            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch",
+            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image",
             "publisher": { "@id": "https://hippocampus-demo.com/#org" },
             "offers": {
               "@type": "Offer",
@@ -132,8 +133,9 @@
         </a>
 
         <nav class="site-nav" aria-label="Primary">
-          <a href="#demos">Demos</a>
           <a href="#how">How it works</a>
+          <a href="#demos">Demos</a>
+          <a href="#get">Get it</a>
           <a href="https://github.com/fastbean-au/hippocampus" rel="noopener"
             >GitHub</a
           >
@@ -172,15 +174,17 @@
         <div class="wrap hero-inner">
           <p class="eyebrow">Finite memory, done right</p>
           <h1 class="hero-title">
-            A biologically-inspired memory engine that
-            <span class="accent">remembers what matters</span>.
+            A memory engine that
+            <span class="accent">remembers what matters</span> — for your logs,
+            your audits, your agents, and more…
           </h1>
           <p class="hero-sub">
-            Hippocampus is a finite storage engine for log retention, audit
-            trails, and context management. Instead of expiring data by age, it
-            continuously weighs significance, recall, and relationships —
-            keeping the highest-value context and gracefully forgetting the
-            noise.
+            Hippocampus is a storage engine that automatically keeps your most
+            significant records and gracefully forgets the rest — bounded
+            retention with no TTL rules to maintain. It weighs significance,
+            recall, and relationships instead of age, giving log pipelines,
+            compliance trails, and AI agents a long-term memory that stays
+            useful as it grows.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#demos">Explore the live demos</a>
@@ -249,7 +253,99 @@
         </div>
       </section>
 
-      <section id="demos" class="section section-alt">
+      <section id="stack" class="section section-alt">
+        <div class="wrap">
+          <h2 class="section-title">Fits the stack you already run</h2>
+          <p class="section-lede">
+            Hippocampus is infrastructure, not a walled garden — it speaks the
+            protocols your services and agents already use, runs on the database
+            you already operate, and layers optional integrations on top.
+          </p>
+
+          <div class="grid features">
+            <article class="card">
+              <h3>APIs &amp; interfaces</h3>
+              <p>
+                Talk to it over an <strong>HTTP/JSON gateway</strong> or
+                <strong>gRPC</strong>, browse the embedded web console, use the
+                <strong>CLI</strong>, or give an AI agent long-term memory
+                through the built-in
+                <strong>Model Context Protocol (MCP)</strong> server — works
+                with Claude, ChatGPT, Grok, or any MCP host.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Storage backends</h3>
+              <p>
+                The same engine runs embedded on pure-Go
+                <strong>SQLite</strong> (WAL) or centralised on
+                <strong>PostgreSQL</strong> or <strong>MySQL</strong> — one
+                consolidating node alongside any number of stateless read/write
+                replicas.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Data ingestion</h3>
+              <p>
+                The streams your systems already emit become long-lived,
+                consolidating memories with no extra plumbing. Event-sourcing
+                connectors ingest from <strong>Kafka</strong>,
+                <strong>NATS</strong>, <strong>RabbitMQ</strong>, and
+                <strong>MQTT</strong>, and an <strong>OpenTelemetry</strong>
+                Collector exporter turns log records into memories, with
+                severity driving significance.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Extend the core</h3>
+              <p>
+                Optional back-ends layer extra capability onto the engine:
+                <strong>OpenSearch</strong> for full-text content search across
+                memories, and local <strong>Ollama</strong> summarisation that
+                runs on your own hardware.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Integrations</h3>
+              <p>
+                An <strong>Obsidian</strong> plugin uses Hippocampus as the
+                storage backend for your vault, so your notes live in the same
+                engine as the rest of your long-term memory.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Deployment</h3>
+              <p>
+                Ship it the way you already ship everything. First-class
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/compose"
+                  rel="noopener"
+                  ><strong>Docker&nbsp;Compose</strong></a
+                >
+                files and
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/k8s"
+                  rel="noopener"
+                  ><strong>Kubernetes</strong></a
+                >
+                (Kustomize) bases are maintained in-repo, and the multi-arch
+                image runs anywhere a container does.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Runtime &amp; security</h3>
+              <p>
+                A single pure-<strong>Go</strong> binary, published multi-arch
+                (amd64 + arm64), with <strong>OIDC</strong> (Auth0, Keycloak, or
+                any provider), <strong>JWT</strong>, and <strong>TLS</strong>
+                throughout.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="demos" class="section">
         <div class="wrap">
           <h2 class="section-title">See it live</h2>
           <p class="section-lede">
@@ -323,97 +419,122 @@
           <p class="demos-note">
             New sign-ins may take a moment while the demo stacks warm up.
           </p>
-        </div>
-      </section>
 
-      <section id="stack" class="section">
-        <div class="wrap">
-          <h2 class="section-title">Fits the stack you already run</h2>
-          <p class="section-lede">
-            Hippocampus is infrastructure, not a walled garden — it speaks the
-            protocols your services and agents already use, runs on the database
-            you already operate, and layers optional integrations on top.
-          </p>
-
-          <div class="grid features">
-            <article class="card">
-              <h3>APIs &amp; interfaces</h3>
-              <p>
-                Talk to it over an <strong>HTTP/JSON gateway</strong> or
-                <strong>gRPC</strong>, browse the embedded web console, or give
-                an AI agent long-term memory through the built-in
-                <strong>Model Context Protocol (MCP)</strong> server — works
-                with Claude, ChatGPT, Grok, or any MCP host.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Storage backends</h3>
-              <p>
-                The same engine runs embedded on pure-Go
-                <strong>SQLite</strong> (WAL) or centralised on
-                <strong>PostgreSQL</strong> or <strong>MySQL</strong> — one
-                consolidating node alongside any number of stateless read/write
-                replicas.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Data ingestion</h3>
-              <p>
-                The streams your systems already emit become long-lived,
-                consolidating memories with no extra plumbing. Event-sourcing
-                connectors ingest from <strong>Kafka</strong>,
-                <strong>NATS</strong>, <strong>RabbitMQ</strong>, and
-                <strong>MQTT</strong>, and an <strong>OpenTelemetry</strong>
-                Collector exporter turns log records into memories, with
-                severity driving significance.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Extend the core</h3>
-              <p>
-                Optional back-ends layer extra capability onto the engine:
-                <strong>OpenSearch</strong> for full-text content search across
-                memories, and local <strong>Ollama</strong> summarisation that
-                runs on your own hardware.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Integrations</h3>
-              <p>
-                An <strong>Obsidian</strong> plugin uses Hippocampus as the
-                storage backend for your vault, so your notes live in the same
-                engine as the rest of your long-term memory.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Runtime &amp; security</h3>
-              <p>
-                A single pure-<strong>Go</strong> binary, published multi-arch
-                (amd64 + arm64), with <strong>OIDC</strong> (Auth0, Keycloak, or
-                any provider), <strong>JWT</strong>, and <strong>TLS</strong>
-                throughout.
-              </p>
-            </article>
+          <div class="try-local">
+            <p class="section-lede">
+              <strong>Prefer to run it yourself?</strong> Clone the repo and
+              start the embedded stack — pure-Go SQLite, zero external
+              dependencies — then watch the same behaviour on your own machine.
+            </p>
+            <div class="codeblock-wrap">
+              <pre
+                class="codeblock"
+              ><code>git clone https://github.com/fastbean-au/hippocampus.git
+cd hippocampus
+./demo/run.sh</code></pre>
+              <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy command"
+                title="Copy"
+              >
+                <svg
+                  class="icon-copy"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <use href="#icon-copy" />
+                </svg>
+                <svg
+                  class="icon-check"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <use href="#icon-check" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="section cta">
+      <section id="get" class="section cta">
         <div class="wrap cta-inner">
-          <h2 class="section-title">Run it yourself in 30 seconds</h2>
+          <h2 class="section-title">Get it</h2>
           <p class="section-lede">
-            Clone the repo and start the embedded stack — pure-Go SQLite, zero
-            external dependencies.
+            Pull the published container image and run it anywhere, or roll it
+            out to your cluster with the Kustomize bases in the repo. It's a
+            single pure-Go binary — SQLite embedded for a self-contained node,
+            or PostgreSQL / MySQL for a centralised store.
           </p>
-          <pre
-            class="codeblock"
-          ><code>git clone https://github.com/fastbean-au/hippocampus.git
-cd hippocampus
-./demo/run.sh</code></pre>
+          <div class="codeblock-wrap">
+            <pre
+              class="codeblock"
+            ><code>podman pull ghcr.io/fastbean-au/hippocampus:latest</code></pre>
+            <button
+              class="copy-btn"
+              type="button"
+              aria-label="Copy command"
+              title="Copy"
+            >
+              <svg
+                class="icon-copy"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-copy" />
+              </svg>
+              <svg
+                class="icon-check"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-check" />
+              </svg>
+            </button>
+          </div>
+          <div class="codeblock-wrap">
+            <pre
+              class="codeblock"
+            ><code>docker pull ghcr.io/fastbean-au/hippocampus:latest</code></pre>
+            <button
+              class="copy-btn"
+              type="button"
+              aria-label="Copy command"
+              title="Copy"
+            >
+              <svg
+                class="icon-copy"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-copy" />
+              </svg>
+              <svg
+                class="icon-check"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <use href="#icon-check" />
+              </svg>
+            </button>
+          </div>
           <div class="hero-actions">
             <a
-              class="btn btn-ghost"
-              href="https://github.com/fastbean-au/hippocampus"
+              class="btn btn-primary"
+              href="https://github.com/fastbean-au/hippocampus/tree/main/deploy"
               rel="noopener"
             >
               <svg
@@ -424,7 +545,7 @@ cd hippocampus
               >
                 <use href="#icon-github" />
               </svg>
-              Read the docs on GitHub
+              Deployment docs on GitHub
             </a>
           </div>
         </div>
@@ -446,8 +567,9 @@ cd hippocampus
           <span class="brand-name">Hippocampus</span>
         </div>
         <nav class="footer-nav" aria-label="Footer">
-          <a href="#demos">Demos</a>
           <a href="#how">How it works</a>
+          <a href="#demos">Demos</a>
+          <a href="#get">Get it</a>
           <a href="https://github.com/fastbean-au/hippocampus" rel="noopener"
             >GitHub</a
           >
@@ -514,6 +636,28 @@ cd hippocampus
           <path
             fill="currentColor"
             d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"
+          />
+        </symbol>
+        <symbol id="icon-copy" viewBox="0 0 24 24">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </g>
+        </symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4 12.5l5 5L20 6.5"
           />
         </symbol>
       </defs>
