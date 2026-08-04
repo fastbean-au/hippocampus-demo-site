@@ -50,6 +50,13 @@ podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 # rebuilt image never goes live. On a live host run this as root; it also loads the unit's env file.
 sudo ./showcase/deploy-site.sh
 
+# Recreate ONLY the front Caddy (+ the two generators that require it) to apply a compose-level change
+# to the `caddy` service — init / healthcheck / env / ports — WITHOUT bouncing the backing services.
+# A plain `up -d caddy` here recreates Caddy's whole depends_on tree (a full-stack outage); this uses
+# `up --no-deps` to scope it. Brief apex blip (Caddy owns :80/:443, so no zero-downtime swap). For a
+# Caddyfile-only change prefer `podman exec showcase_caddy_1 caddy reload` (downtime-free, no recreate).
+sudo ./showcase/deploy-caddy.sh
+
 # Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000
 ```

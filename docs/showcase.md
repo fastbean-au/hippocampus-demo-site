@@ -301,9 +301,27 @@ sources the same `EnvironmentFile` the unit uses, so `BASE_DOMAIN` et al. are th
 sudo ./showcase/deploy-site.sh
 ```
 
-**Any other change** (compose file, Caddyfiles, configs, image bumps for the demos) — **restart the
-systemd unit**. Its `ExecStart` is `up -d --build`, so the restart rebuilds any changed images and
-recreates the containers:
+**Front-Caddy service change** (edited the `caddy` service in `compose.showcase-combined.yaml` —
+`init` / `healthcheck` / `env` / `ports` — but nothing else) — run the Caddy deploy script. It
+recreates **only** Caddy and the two generators that require it, leaving the backing services
+(postgres, opensearch, keycloak, otel-lgtm, book, logs) and the landing site untouched:
+
+```sh
+sudo ./showcase/deploy-caddy.sh
+```
+
+A plain `podman compose up -d caddy` cannot stand in for this: on podman-compose 1.0.6 it walks
+Caddy's whole `depends_on` tree and recreates postgres/opensearch/keycloak/otel/book/logs with it —
+a full-stack bounce no lighter than the systemd restart below. The script scopes the blast radius
+with `up --no-deps` (and removes the generators first, since their `--requires caddy` edge otherwise
+refuses Caddy's removal, then recreates them once Caddy is healthy). Unlike `deploy-site.sh` there is
+**a brief apex + subdomain blip** — Caddy owns host `:80/:443`, so no overlapping backend is possible.
+For a **Caddyfile-only** change (routes/headers, no compose change) skip the recreate entirely and
+reload in place, downtime-free: `sudo podman exec showcase_caddy_1 caddy reload --config /etc/caddy/Caddyfile`.
+
+**Any other change** (compose file beyond the caddy service, other Caddyfiles, configs, image bumps
+for the demos) — **restart the systemd unit**. Its `ExecStart` is `up -d --build`, so the restart
+rebuilds any changed images and recreates the containers:
 
 ```sh
 sudo systemctl restart hippocampus-showcase
