@@ -61,6 +61,12 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    # Run an init (tini-style) as PID 1 so orphaned children are reaped. The healthcheck below runs
+    # BusyBox `wget` over HTTPS, which forks an `ssl_client` helper; when wget exits, ssl_client is
+    # reparented to PID 1. Caddy (a Go binary) never wait()s on it, so without an init those helpers
+    # pile up as unreaped zombies - one per check - and eventually exhaust the container's PID slots
+    # (the healthcheck then can't fork and reports unhealthy despite Caddy being fine). init reaps them.
+    init: true
     ports:
       - "80:80"
       - "443:443"
