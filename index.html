@@ -102,7 +102,7 @@
             "image": "https://hippocampus-demo.com/assets/og-image.png",
             "softwareHelp": "https://github.com/fastbean-au/hippocampus",
             "codeRepository": "https://github.com/fastbean-au/hippocampus",
-            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image",
+            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
             "publisher": { "@id": "https://hippocampus-demo.com/#org" },
             "offers": {
               "@type": "Offer",
@@ -334,19 +334,38 @@
             <article class="card">
               <h3>Deployment</h3>
               <p>
-                Ship it the way you already ship everything. First-class
+                Ship it the way you already ship everything. A
+                <a
+                  href="https://github.com/fastbean-au/homebrew-tap"
+                  rel="noopener"
+                  ><strong>Homebrew</strong></a
+                >
+                tap,
+                <strong>.deb</strong> / <strong>.rpm</strong> packages with a
+                hardened
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/systemd"
+                  rel="noopener"
+                  ><strong>systemd</strong></a
+                >
+                unit, a macOS
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/launchd"
+                  rel="noopener"
+                  ><strong>LaunchAgent</strong></a
+                >,
                 <a
                   href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/compose"
                   rel="noopener"
                   ><strong>Docker&nbsp;Compose</strong></a
                 >
-                files and
+                files, and
                 <a
                   href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/k8s"
                   rel="noopener"
                   ><strong>Kubernetes</strong></a
                 >
-                (Kustomize) bases are maintained in-repo, and the multi-arch
+                (Kustomize) bases are all maintained in-repo, and the multi-arch
                 image runs anywhere a container does.
               </p>
             </article>
@@ -481,71 +500,300 @@ cd hippocampus
         <div class="wrap">
           <h2 class="section-title">Get it</h2>
           <p class="section-lede">
-            Pull the published container image and run it anywhere, or roll it
-            out to your cluster with the Kustomize bases in the repo. It's a
-            single pure-Go binary — SQLite embedded for a self-contained node,
-            or PostgreSQL / MySQL for a centralised store.
+            It's a single pure-Go binary — SQLite embedded for a self-contained
+            node, or PostgreSQL / MySQL for a centralised store. Install it the
+            way you already install everything else.
           </p>
-          <div class="codeblock-wrap">
-            <pre
-              class="codeblock"
-            ><code>podman pull ghcr.io/fastbean-au/hippocampus:latest</code></pre>
-            <button
-              class="copy-btn"
-              type="button"
-              aria-label="Copy command"
-              title="Copy"
-            >
-              <svg
-                class="icon-copy"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
+
+          <div class="grid installs">
+            <article class="card install-card">
+              <div class="card-tag">homebrew</div>
+              <h3>macOS &amp; Linux</h3>
+              <p>
+                The quickest path to a running instance. The service formula
+                installs a default embedded-SQLite config that survives
+                upgrades, plus a
+                <code>brew services</code> definition. The
+                <code>hippocampus-cli</code> (the <code>hippo</code> command)
+                and <code>hippocampus-mcp</code> (the Model Context Protocol
+                bridge) formulae are in the same tap.
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>brew install fastbean-au/tap/hippocampus
+brew services start hippocampus</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/homebrew-tap"
+                rel="noopener"
+                >The tap</a
               >
-                <use href="#icon-copy" />
-              </svg>
-              <svg
-                class="icon-check"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
+            </article>
+
+            <article class="card install-card">
+              <div class="card-tag">container</div>
+              <h3>Anywhere a container runs</h3>
+              <p>
+                The published image is multi-arch (amd64 + arm64), so the same
+                tag works on a laptop, a VM, or a cluster node.
+                <code>docker pull</code> works identically.
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>podman pull ghcr.io/fastbean-au/hippocampus:latest</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/hippocampus/pkgs/container/hippocampus"
+                rel="noopener"
+                >The image</a
               >
-                <use href="#icon-check" />
-              </svg>
-            </button>
+            </article>
+
+            <article class="card install-card">
+              <div class="card-tag">deb &amp; rpm</div>
+              <h3>Linux packages</h3>
+              <p>
+                Every release publishes <code>.deb</code> and
+                <code>.rpm</code> packages carrying the binary, a hardened
+                systemd unit (<code>DynamicUser</code>, dropped capabilities,
+                <code>ProtectSystem=strict</code>), and a default config your
+                edits survive. Use <code>rpm -i</code> on RHEL, Fedora, or SUSE.
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>sudo dpkg -i hippocampus_&lt;version&gt;_amd64.deb
+sudo systemctl enable --now hippocampus</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/systemd"
+                rel="noopener"
+                >The systemd unit</a
+              >
+            </article>
+
+            <article class="card install-card">
+              <div class="card-tag">kubernetes</div>
+              <h3>Kustomize overlays</h3>
+              <p>
+                Plain Kustomize — no Helm, no extra tooling. One overlay for the
+                embedded single instance (a <code>StatefulSet</code> and its
+                volume), one for the centralised model (a consolidator plus read
+                replicas over shared PostgreSQL).
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>kubectl apply -k deploy/k8s/overlays/sqlite</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/k8s"
+                rel="noopener"
+                >The manifests</a
+              >
+            </article>
+
+            <article class="card install-card">
+              <div class="card-tag">compose</div>
+              <h3>Docker Compose</h3>
+              <p>
+                Ready-made stacks for each store — SQLite, PostgreSQL, MySQL,
+                and OpenSearch (plain or secured) — plus a corporate-proxy
+                variant, each with its config and a bundled Grafana dashboard.
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>docker compose -f deploy/compose/docker-compose.postgres.yaml up -d</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/compose"
+                rel="noopener"
+                >The compose files</a
+              >
+            </article>
+
+            <article class="card install-card">
+              <div class="card-tag">launchd</div>
+              <h3>macOS LaunchAgent</h3>
+              <p>
+                The macOS counterpart to the systemd unit, for a personal
+                instance with no container runtime: it starts at login, restarts
+                on exit, and shuts down gracefully on
+                <code>SIGTERM</code>. Homebrew's
+                <code>brew services</code> wires this up for you.
+              </p>
+              <div class="codeblock-wrap">
+                <pre
+                  class="codeblock"
+                ><code>launchctl bootstrap gui/"$(id -u)" ~/Library/LaunchAgents/au.fastbean.hippocampus.plist</code></pre>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  aria-label="Copy command"
+                  title="Copy"
+                >
+                  <svg
+                    class="icon-copy"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-copy" />
+                  </svg>
+                  <svg
+                    class="icon-check"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <use href="#icon-check" />
+                  </svg>
+                </button>
+              </div>
+              <a
+                class="card-link"
+                href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/launchd"
+                rel="noopener"
+                >The plist</a
+              >
+            </article>
           </div>
-          <div class="codeblock-wrap">
-            <pre
-              class="codeblock"
-            ><code>docker pull ghcr.io/fastbean-au/hippocampus:latest</code></pre>
-            <button
-              class="copy-btn"
-              type="button"
-              aria-label="Copy command"
-              title="Copy"
-            >
-              <svg
-                class="icon-copy"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <use href="#icon-copy" />
-              </svg>
-              <svg
-                class="icon-check"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <use href="#icon-check" />
-              </svg>
-            </button>
-          </div>
+
           <div class="hero-actions">
             <a
               class="btn btn-primary"
