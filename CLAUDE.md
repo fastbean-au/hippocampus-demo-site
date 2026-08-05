@@ -55,11 +55,12 @@ podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 # rebuilt image never goes live. On a live host run this as root; it also loads the unit's env file.
 sudo ./showcase/deploy-site.sh
 
-# Recreate ONLY the front Caddy (+ the two generators that require it) to apply a compose-level change
-# to the `caddy` service — init / healthcheck / env / ports — WITHOUT bouncing the backing services.
-# A plain `up -d caddy` here recreates Caddy's whole depends_on tree (a full-stack outage); this uses
-# `up --no-deps` to scope it. Brief apex blip (Caddy owns :80/:443, so no zero-downtime swap). For a
-# Caddyfile-only change prefer `podman exec showcase_caddy_1 caddy reload` (downtime-free, no recreate).
+# Recreate ONLY the front Caddy (+ the two generators that require it) to apply a change to the
+# `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. A plain
+# `up -d caddy` recreates Caddy's whole depends_on tree (a full-stack outage); this scopes it with
+# `up --no-deps` and never passes --force-recreate (see below). Brief apex blip — Caddy owns
+# :80/:443, so no zero-downtime swap is possible. This is also the ONLY reliable way to apply a
+# Caddyfile change on a host that updates by `git pull` (see the reload caveat below).
 sudo ./showcase/deploy-caddy.sh
 
 # Local preview without a container engine (serves the repo root on :8000)
@@ -100,6 +101,41 @@ an overlapping second backend on the `hippocampus-site` network alias, removes t
 possible only because caddy no longer `depends_on` the site — then drops the temp backend). A plain
 `podman compose up -d --build hippocampus-site` does **not** work on this stack's podman-compose
 (1.0.6): with no `--replace` it hits the existing container's name and silently restarts the old one.
+
+### podman-compose 1.0.6 traps (read before touching a deploy script)
+
+Both of these bite silently — they report success while doing the wrong thing. See
+`podman_compose.py` ~2053-2069; the deploy scripts route around them and verify the result.
+
+- **Never pass `--force-recreate`.** Its handler is
+  `if args.force_recreate or len(diff_hashes): compose.commands["down"](...)` — a **full-project
+  `down`** that ignores `--no-deps` and the named service alike. Passing it to limit a recreate does
+  the exact opposite and takes the whole stack down. Remove the one container you want replaced by
+  hand, then `up -d --no-deps <service>` into the free name. The same `down` also fires whenever a
+  container's stored config-hash differs from the compose file's current hash — i.e. after **any**
+  edit to `compose.showcase-combined.yaml` — so a targeted `up` can still bounce unrelated services;
+  `deploy-caddy.sh` restarts whatever it finds stopped rather than assuming containment.
+- **A name clash degrades to `podman start`.** When `podman run` fails because the container name is
+  taken, compose silently runs `podman start <name>` instead — reviving the **old** container, with
+  its old image and its old bind mounts, while the log output still reads like a recreate. Always
+  free the name first, and verify the container id actually changed afterwards.
+
+### The Caddyfile bind mount goes stale on `git pull`
+
+`caddy/Caddyfile.combined` is bind-mounted **as a file**, so the mount is pinned to that file's
+inode when the container starts. The downtime-free reload:
+
+```sh
+sudo podman exec showcase_caddy_1 caddy reload --config /etc/caddy/Caddyfile
+```
+
+only picks up an edit that **kept the same inode** (`cat new > Caddyfile`). Anything that replaces
+the file — `git pull`, `sed -i`, `mv`, most editors' write-new-then-rename — leaves the container
+reading the **old** inode: the host file is new, the container's is not, and `caddy reload` logs
+`"config is unchanged"` and exits **0**. Since this deployment updates by `git pull`, reload is
+effectively unusable for Caddyfile changes there — use `sudo ./showcase/deploy-caddy.sh`, which
+recreates the container and so re-resolves the mount. The script's `assert_caddyfile_fresh` compares
+the mounted copy's checksum against the host's and fails the run if they differ.
 
 ## Constraints when editing
 
