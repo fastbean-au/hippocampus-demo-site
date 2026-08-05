@@ -12,10 +12,11 @@
 #   logs console:  https://logs.${BASE_DOMAIN}/ui       (logs.hippocampus.example)
 #   keycloak:      https://auth.${BASE_DOMAIN}/         (auth.hippocampus.example) — SHARED by both
 #   grafana:       https://grafana.${BASE_DOMAIN}/      (grafana.hippocampus.example) — SHARED by both
+#   config builder: https://config-builder.${BASE_DOMAIN}/ (config-builder.hippocampus.example)
 #   gRPC:          <vm>:50051 (book), <vm>:50052 (logs) — published for optional external tooling
 #                  (the in-stack generators reach the services by name, not via these ports)
 #
-# Point DNS A/AAAA records for those four names (or a single *.${BASE_DOMAIN} wildcard) at the host,
+# Point DNS A/AAAA records for those five names (or a single *.${BASE_DOMAIN} wildcard) at the host,
 # with 80/443 reachable for the ACME challenge.
 #
 # THE SPLIT-ISSUER FIX (see Caddyfile.book for the full rationale): Caddy joins the `shared` network
@@ -139,6 +140,25 @@ services:
       - shared
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ---- config builder: the configuration and deployment wizard, published at
+  #      config-builder.${BASE_DOMAIN}. Unlike every other service here it is NOT a demo of the memory
+  #      service - it is a tool: a static single-page app (served by the published
+  #      hippocampus-config-wizard image, built from cmd/config-wizard in the hippocampus repo) that
+  #      builds a config.json and the matching deployment artefacts entirely in the visitor's browser.
+  #      It holds no state, reads no store, and makes no outbound request, so it needs neither the
+  #      data network nor auth: it joins `shared` only so the front Caddy can reach it by name. ------
+  config-builder:
+    image: ghcr.io/fastbean-au/hippocampus-config-wizard:latest
+    restart: unless-stopped
+    networks:
+      - shared
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8091/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3

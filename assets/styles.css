@@ -427,6 +427,31 @@ code {
   padding-right: 50px;
 }
 
+/* Full-width lead-in above the install grid: copy left, CTA right, stacking on
+   narrow viewports. Not an install card — it has no command to copy. */
+.builder-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding: 30px;
+}
+
+.builder-copy {
+  flex: 1 1 380px;
+}
+
+/* The copy column is a block, so the tag's align-self never applies — it needs
+   inline-block to shrink to its text. */
+.builder-copy .card-tag {
+  display: inline-block;
+}
+
+.builder-band .btn {
+  flex: 0 0 auto;
+}
+
 .card-link {
   align-self: flex-start;
   margin-top: 16px;

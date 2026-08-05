@@ -30,7 +30,12 @@ This repo holds two things for the Hippocampus demo:
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
    Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options);
    [`showcase/uninstall-ubuntu.sh`](showcase/uninstall-ubuntu.sh) reverses it (keeping volumes and
-   images unless `--remove-volumes` / `--remove-images` are given).
+   images unless `--remove-volumes` / `--remove-images` are given). The combined stack also publishes the
+   **configuration wizard** at `config-builder.${BASE_DOMAIN}` (the
+   `ghcr.io/fastbean-au/hippocampus-config-wizard` image, source `cmd/config-wizard` in the
+   hippocampus repo) — a tool rather than a demo: a static page that builds a `config.json` and its
+   deployment artefacts entirely in the visitor's browser, so it needs no auth, no store, and no
+   network access beyond the front Caddy reaching it by name.
 
 ## Commands
 

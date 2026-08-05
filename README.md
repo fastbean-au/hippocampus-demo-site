@@ -21,12 +21,13 @@ podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 
 The site runs as the `hippocampus-site` service on the showcase's `hippocampus-shared` network.
 The showcase's front Caddy owns `:80/:443`, terminates TLS, and reverse-proxies the apex domain to
-this container by service name — exactly how it proxies the `book` / `logs` / `auth` / `grafana`
-subdomains.
+this container by service name — exactly how it proxies the `book` / `logs` / `auth` / `grafana` /
+`config-builder` subdomains.
 
 ```text
 ┌─────────────── hippocampus showcase (owns :80/:443) ───────────────┐
 │  Caddy ──reverse_proxy──▶ book / logs / auth / grafana             │
+│    └────reverse_proxy────▶ config-builder:8091 (the config wizard)  │
 │    └────reverse_proxy────▶ hippocampus-site:80                     │
 │                              (over the `hippocampus-shared` network)│
 └────────────────────────────────────────────────────────────────────┘

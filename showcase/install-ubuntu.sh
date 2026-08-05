@@ -24,7 +24,8 @@
 #
 # Options:
 #   --base-domain <domain>   Parent domain for the showcase. The apex plus the book./logs./auth./
-#                            grafana. subdomains must have DNS A/AAAA records pointing at this host,
+#                            grafana./config-builder. subdomains must have DNS A/AAAA records
+#                            pointing at this host,
 #                            with ports 80/443 reachable, for Caddy's automatic HTTPS. Also rendered
 #                            into the Keycloak realm's console redirect URIs so sign-in works.
 #                            Required.
@@ -285,7 +286,8 @@ cat <<EOF
 The showcase is starting and will come back up on reboot. Point DNS for these names at this host,
 with 80/443 reachable, for Caddy to provision TLS:
 
-  ${BASE_DOMAIN}, book.${BASE_DOMAIN}, logs.${BASE_DOMAIN}, auth.${BASE_DOMAIN}, grafana.${BASE_DOMAIN}
+  ${BASE_DOMAIN}, book.${BASE_DOMAIN}, logs.${BASE_DOMAIN}, auth.${BASE_DOMAIN}, grafana.${BASE_DOMAIN},
+  config-builder.${BASE_DOMAIN}
 
 Handy commands:
 

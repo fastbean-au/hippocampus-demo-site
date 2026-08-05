@@ -218,15 +218,25 @@ BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
   podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 ```
 
-That serves four subdomains of the one domain — point A/AAAA records for each (or a single
+That serves five subdomains of the one domain — point A/AAAA records for each (or a single
 `*.${BASE_DOMAIN}` wildcard) at the host:
 
-| Subdomain                | Serves                                                      |
-| ------------------------ | ----------------------------------------------------------- |
-| `book.${BASE_DOMAIN}`    | the book console (`/ui`), gRPC on `:50051`                  |
-| `logs.${BASE_DOMAIN}`    | the logs console (`/ui`), gRPC on `:50052`                  |
-| `auth.${BASE_DOMAIN}`    | Keycloak — **shared**, one realm serving both consoles      |
-| `grafana.${BASE_DOMAIN}` | Grafana — **shared**, both services' telemetry in one place |
+| Subdomain                       | Serves                                                      |
+| ------------------------------- | ----------------------------------------------------------- |
+| `book.${BASE_DOMAIN}`           | the book console (`/ui`), gRPC on `:50051`                  |
+| `logs.${BASE_DOMAIN}`           | the logs console (`/ui`), gRPC on `:50052`                  |
+| `auth.${BASE_DOMAIN}`           | Keycloak — **shared**, one realm serving both consoles      |
+| `grafana.${BASE_DOMAIN}`        | Grafana — **shared**, both services' telemetry in one place |
+| `config-builder.${BASE_DOMAIN}` | the configuration and deployment wizard (see below)         |
+
+The **config builder** is the odd one out: not a demo instance but a tool. It is the
+`ghcr.io/fastbean-au/hippocampus-config-wizard` image — a static single-page app (source:
+`cmd/config-wizard` in the [hippocampus](https://github.com/fastbean-au/hippocampus) repo) that walks
+a visitor through a `config.json` and generates the deployment artefacts to carry it, entirely in
+their browser. It holds no state, reaches no service, and makes no outbound request, so it sits on
+the `shared` network with nothing else attached to it and needs no authentication. Since the config
+it builds may contain the visitor's own secrets, that everything-client-side property is the point —
+say so if you adapt this page.
 
 The apex `${BASE_DOMAIN}` itself is also reverse-proxied, to the `hippocampus-site` landing-page
 service (`hippocampus-site:80` by default, overridable with `SITE_UPSTREAM`). That service is part of
@@ -278,7 +288,8 @@ sudo ./showcase/install-ubuntu.sh \
 # --gen-secret <secret>   optional; must match the realm if you changed it
 ```
 
-Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.` subdomains at the host (80/443
+Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.`/`config-builder.` subdomains at
+the host (80/443
 reachable) so Caddy can provision TLS, and the self-driving showcase comes up on its own.
 
 #### Updating a running deployment
