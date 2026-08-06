@@ -1,3 +1,7 @@
 # Domain-rendered Keycloak realm produced by showcase/install-ubuntu.sh (BASE_DOMAIN substituted into
 # the tracked template). Host-specific; never committed.
 showcase/keycloak/realm-hippocampus.generated.json
+
+# Domain-rendered Grafana dashboard produced by the same script (the landing-page link filled in for
+# BASE_DOMAIN). Host-specific; never committed.
+showcase/observability/hippocampus-dashboard.generated.json

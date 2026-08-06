@@ -2,6 +2,7 @@
   "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 1,
+  "links": [],
   "time": { "from": "now-30m", "to": "now" },
   "refresh": "10s",
   "title": "Hippocampus",

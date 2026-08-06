@@ -205,6 +205,32 @@ if [[ "${NEW_REALM_HASH}" != "${PREV_IMPORTED_HASH}" ]]; then
   REALM_CHANGED=1
 fi
 
+# Render the Grafana dashboard the same way, for the same reason: a visitor who follows the landing
+# page's Grafana link lands on this dashboard (it is Grafana's configured home dashboard) inside a
+# whole other app, with nothing to bring them back. A Grafana dashboard link is the way back, and it
+# needs an absolute URL - so the tracked dashboard ships an empty "links": [] and the real
+# BASE_DOMAIN is filled in here. Leaving it empty in the tracked file (rather than shipping a
+# hippocampus.example placeholder link) means a hand run, and the standalone book/logs stacks that
+# have no landing page at all, get NO link instead of a dead one.
+#
+# The link is kept on one line so this stays a plain sed substitution; the generated file is
+# gitignored, so its formatting does not matter.
+DASHBOARD_TEMPLATE="${SCRIPT_DIR}/observability/hippocampus-dashboard.json"
+DASHBOARD_GENERATED="${SCRIPT_DIR}/observability/hippocampus-dashboard.generated.json"
+DASHBOARD_RELATIVE="./observability/hippocampus-dashboard.generated.json"
+
+[[ -f "${DASHBOARD_TEMPLATE}" ]] || die "expected dashboard template at ${DASHBOARD_TEMPLATE}."
+
+DASHBOARD_LINK="{\"asDropdown\":false,\"icon\":\"external link\",\"includeVars\":false,\"keepTime\":false,\"tags\":[],\"targetBlank\":false,\"title\":\"Back to ${BASE_DOMAIN}\",\"tooltip\":\"Return to the Hippocampus landing page\",\"type\":\"link\",\"url\":\"https://${BASE_DOMAIN}\"}"
+
+echo "==> Rendering ${DASHBOARD_GENERATED} with a link back to https://${BASE_DOMAIN}"
+sed \
+  -e "s|\"links\": \[\]|\"links\": [${DASHBOARD_LINK}]|" \
+  "${DASHBOARD_TEMPLATE}" >"${DASHBOARD_GENERATED}"
+
+grep -q "https://${BASE_DOMAIN}" "${DASHBOARD_GENERATED}" ||
+  die "rendered dashboard has no landing-page link; the tracked template's \"links\": [] is missing."
+
 echo "==> Writing ${ENV_FILE}"
 install -d -m 0755 "${ENV_DIR}"
 umask 077
@@ -218,6 +244,9 @@ ACME_EMAIL=${ACME_EMAIL}
 GEN_SECRET=${GEN_SECRET}
 # Domain-rendered realm produced above, so the console redirect URIs match ${BASE_DOMAIN}.
 KEYCLOAK_REALM_FILE=${REALM_RELATIVE}
+# Domain-rendered dashboard produced above, so Grafana's home dashboard carries a link back to the
+# landing page at ${BASE_DOMAIN}.
+GRAFANA_DASHBOARD_FILE=${DASHBOARD_RELATIVE}
 EOF
 umask 022
 

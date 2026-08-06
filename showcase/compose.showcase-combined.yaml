@@ -419,7 +419,16 @@ services:
       GF_SERVER_ROOT_URL: "https://grafana.${BASE_DOMAIN:-hippocampus.example}/"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json
     volumes:
-      - ./observability/hippocampus-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json:ro
+      # GRAFANA_DASHBOARD_FILE swaps in a domain-rendered dashboard, exactly as KEYCLOAK_REALM_FILE
+      # does for the realm. This dashboard is Grafana's home dashboard (above), so it is where a
+      # visitor following the landing page's Grafana link arrives - and it is the only place a way
+      # back to that landing page can live, since Grafana is a whole app with its own nav. The way
+      # back is a dashboard link, which needs a real domain to point at: the tracked file therefore
+      # ships "links": [] and install-ubuntu.sh renders hippocampus-dashboard.generated.json with the
+      # link filled in for BASE_DOMAIN, pointing this at it. A hand run without that render (or the
+      # standalone book/logs stacks, which have no landing page at all) simply has no link, rather
+      # than a dead one.
+      - ${GRAFANA_DASHBOARD_FILE:-./observability/hippocampus-dashboard.json}:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json:ro
       - ./observability/dashboards-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
     networks:
       - shared

@@ -270,6 +270,14 @@ That serves five subdomains of the one domain — point A/AAAA records for each 
 | `grafana.${BASE_DOMAIN}`        | Grafana — **shared**, both services' telemetry in one place |
 | `config-builder.${BASE_DOMAIN}` | the configuration and deployment wizard (see below)         |
 
+Each of those is a whole application with its own navigation, so the landing page opens them in a new
+tab and the visitor's original tab stays on the site. Grafana additionally carries its own way back:
+`install-ubuntu.sh` renders `observability/hippocampus-dashboard.generated.json` (mounted via
+`GRAFANA_DASHBOARD_FILE`) with a dashboard link to `https://${BASE_DOMAIN}`, so a visitor who arrives
+straight at `grafana.${BASE_DOMAIN}` — which opens on that dashboard, Grafana's configured home — has
+a button home. The tracked dashboard ships `"links": []`, so a hand run, and the standalone book/logs
+stacks that have no landing page, get no link rather than a dead one.
+
 The **config builder** is the odd one out: not a demo instance but a tool. It is the
 `ghcr.io/fastbean-au/hippocampus-config-wizard` image — a static single-page app (source:
 `cmd/config-wizard` in the [hippocampus](https://github.com/fastbean-au/hippocampus) repo) that walks

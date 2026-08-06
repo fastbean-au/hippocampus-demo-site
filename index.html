@@ -278,7 +278,14 @@
                   rel="noopener"
                   ><strong>Model Context Protocol (MCP)</strong></a
                 >
-                server — works with Claude, ChatGPT, Grok, or any MCP host.
+                server — works with Claude, ChatGPT, Grok, or any MCP host. Any
+                language with a gRPC or HTTP stack gets a client in minutes:
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/clients.md"
+                  rel="noopener"
+                  ><strong>generate one</strong></a
+                >
+                from the proto or the served OpenAPI document.
               </p>
             </article>
             <article class="card">
@@ -390,7 +397,8 @@
             summarisation, and eviction play out in minutes rather than days.
             Sign in as
             <code>demo</code> / <code>demo</code> to browse — the consoles are
-            read-only for visitors.
+            read-only for visitors. Each opens in a new tab, so this page stays
+            where it is.
           </p>
           <p class="section-lede">
             These consoles are a lens on the engine, not the product itself.
@@ -411,7 +419,9 @@
               <a
                 class="btn btn-primary"
                 href="https://book.hippocampus-demo.com/ui"
+                target="_blank"
                 rel="noopener"
+                aria-label="Open the book console (opens in a new tab)"
               >
                 Open the book console
               </a>
@@ -428,7 +438,9 @@
               <a
                 class="btn btn-primary"
                 href="https://logs.hippocampus-demo.com/ui"
+                target="_blank"
                 rel="noopener"
+                aria-label="Open the logs console (opens in a new tab)"
               >
                 Open the logs console
               </a>
@@ -446,7 +458,9 @@
               <a
                 class="btn btn-primary"
                 href="https://grafana.hippocampus-demo.com"
+                target="_blank"
                 rel="noopener"
+                aria-label="Open Grafana (opens in a new tab)"
               >
                 Open Grafana
               </a>
@@ -520,7 +534,9 @@ cd hippocampus
             <a
               class="btn btn-primary"
               href="https://config-builder.hippocampus-demo.com"
+              target="_blank"
               rel="noopener"
+              aria-label="Open the config builder (opens in a new tab)"
             >
               Open the config builder
             </a>

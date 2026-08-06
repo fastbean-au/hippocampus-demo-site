@@ -130,9 +130,11 @@ systemctl reset-failed "${SERVICE_NAME}.service" 2>/dev/null || true
 echo "==> Removing ${ENV_DIR}"
 rm -rf "${ENV_DIR}"
 
-# The installer renders a host-specific realm (BASE_DOMAIN substituted in) alongside the tracked
-# template; it is gitignored, so remove it to leave the checkout clean.
+# The installer renders host-specific copies of the realm (BASE_DOMAIN substituted into the redirect
+# URIs) and of the Grafana dashboard (its landing-page link filled in for BASE_DOMAIN) alongside the
+# tracked originals; both are gitignored, so remove them to leave the checkout clean.
 rm -f "${SCRIPT_DIR}/keycloak/realm-hippocampus.generated.json"
+rm -f "${SCRIPT_DIR}/observability/hippocampus-dashboard.generated.json"
 
 if [[ "$REMOVE_PACKAGES" -eq 1 ]]; then
   echo "==> Purging podman and podman-compose"
