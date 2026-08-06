@@ -61,6 +61,14 @@ Each stack runs Postgres + OpenSearch (1 GiB heap) + Keycloak (JVM) + an otel-lg
 (Grafana/Prometheus/Tempo/Loki) + hippocampus + Caddy, and there are two of them. Budget ~10 GiB of
 RAM in use.
 
+The **book** stack adds an `ollama` service holding a small embedding model for
+[semantic search](showcase.md#semantic-search): `all-minilm` is ~45 MB on disk and around
+0.5 GiB resident while serving. Its CPU cost is bursty rather than continuous — bodies are embedded
+as they are stored, and the book generator writes once every 24 hours — but a `--reset` cycle
+re-embeds the whole book, so expect a few minutes of elevated CPU then. Drop the `ollama` service
+(and set `ollama.embedding.enabled` false in `config.showcase-book.json`) if you would rather not
+spend it.
+
 |             | Recommendation                                                                                                       |
 | ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | Shape       | `VM.Standard.E4.Flex` at **4 OCPUs / 24 GiB** (8 vCPUs); Arm `VM.Standard.A1.Flex` at 4/24 is the Always Free option |

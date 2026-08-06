@@ -1,7 +1,8 @@
 # Hosted showcase
 
-A publicly reachable demonstration of Hippocampus — the web console, OpenSearch content search, and
-the Grafana/OTEL telemetry stack — with the UI protected by an identity provider. It runs as **two
+A publicly reachable demonstration of Hippocampus — the web console, OpenSearch content search
+(keyword **and semantic**), and the Grafana/OTEL telemetry stack — with the UI protected by an
+identity provider. It runs as **two
 independent stacks**, each driven by the [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen)
 generators:
 
@@ -32,8 +33,48 @@ days. They differ where the two shapes differ:
   leaves capacity uncapped — the store is small and purged each day.
 - **logs** disables summarisation and caps the store (`capacityBytes`/`capacityMemories`) so eviction
   keeps the ever-growing trickle bounded.
+- **book** also enables **semantic search** (`ollama.embedding`), so the console's search tab offers
+  keyword, semantic, and hybrid modes. See [Semantic search](#semantic-search) below for why it
+  rides with the book example and not the logs one.
 
 Both enable OpenSearch and ship metrics/traces to `otel-lgtm` by default.
+
+## Semantic search
+
+The book stack runs an extra `ollama` service holding a small embedding model. Hippocampus turns
+each memory body into a vector through it and stores that in the OpenSearch k-NN index, so the
+console's search tab can find a passage by **meaning** as well as by its words — searching the book
+for "a sudden change in fortune" surfaces passages that never use those words. The console reads the
+available modes from `WhoAmI` and shows a **Mode** picker (keyword / semantic / hybrid, defaulting
+to hybrid) only where the deployment can serve more than one.
+
+It is wired to the **book** service only, for two reasons that happen to agree:
+
+- Semantic search is most worth demonstrating on prose, where paraphrase is the whole point. Log
+  lines are terse and structured, and keyword search is genuinely the better tool for them.
+- Embedding runs on the **write path**, so putting it in front of the logs generator's continuous
+  trickle would spend the VM's shared CPU all day for the less interesting demo. The book generator
+  writes in a burst once every 24 hours and is then quiet, which suits it far better.
+
+The model is **`all-minilm`** (~45 MB, 384 dimensions) rather than the more usual
+`nomic-embed-text` (~275 MB, 768) — a deliberate footprint choice for a demo VM already running
+Postgres, OpenSearch, Keycloak and Grafana. Override it with `EMBEDDING_MODEL`, but note that
+changing the model means changing `ollama.embedding.dimensions` in the config to match **and**
+rebuilding the index (`--backfill-search --reindex`): a k-NN index fixes its vector width at
+creation.
+
+The `ollama` service pulls its model on first start, and its healthcheck gates on the **model**
+being present rather than the port being open — so `hippocampus` waits for it and no memory is
+stored before it can be embedded. First boot therefore takes a minute or two longer than before,
+and the model persists in a volume across restarts.
+
+Two operational consequences worth knowing:
+
+- The book config raises `opensearch.reconcileIntervalSeconds` to 3600. The reconciliation sweep
+  re-embeds every memory it visits (it must, or it would replace documents with vectorless copies
+  and silently strip them from semantic search), which makes it far more expensive than the plain
+  re-index it used to be.
+- A `--reset` book cycle re-embeds the whole book. That is the burst the sizing note accounts for.
 
 ### The one issuer rule
 

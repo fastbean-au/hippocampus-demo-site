@@ -68,6 +68,9 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
+      # Waits for the model to finish pulling, so no memory is stored before it can be embedded.
+      ollama:
+        condition: service_healthy
 
   postgres:
     image: postgres:17-alpine
@@ -99,6 +102,41 @@ services:
       timeout: 5s
       retries: 24
 
+  # Embedding model for semantic search. Hippocampus turns each memory body into a vector through
+  # this and stores it in the OpenSearch k-NN index, so the console's search tab can find a passage
+  # by meaning as well as by its words - the point being easiest to see on prose, which is why this
+  # rides with the book showcase and not the logs one.
+  #
+  # all-minilm rather than the more usual nomic-embed-text: it is ~45 MB against ~275 MB and 384
+  # dimensions against 768, which matters on a demo VM already running Postgres, OpenSearch,
+  # Keycloak and Grafana. Embedding quality is lower, but comfortably enough to demonstrate the
+  # difference from keyword search. Prefer nomic-embed-text for a real deployment.
+  #
+  # The image ships no model, so the entrypoint starts the server, pulls the model, then hands the
+  # process back. The healthcheck gates on the MODEL being present rather than the port being open,
+  # because a server that is up but still pulling would let hippocampus start and quietly store its
+  # first memories without vectors.
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        server=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama pull ${EMBEDDING_MODEL:-all-minilm}
+        wait $$server
+    volumes:
+      - book-ollama-data:/root/.ollama
+    healthcheck:
+      test:
+        ["CMD-SHELL", "ollama list | grep -q ${EMBEDDING_MODEL:-all-minilm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
@@ -129,6 +167,7 @@ services:
 volumes:
   book-postgres-data:
   book-opensearch-data:
+  book-ollama-data:
   book-keycloak-data:
   book-caddy-data:
   book-caddy-config:

@@ -55,8 +55,18 @@
     "password": "",
     "index": "hippocampus-memories",
     "queueSize": 4096,
-    "reconcileIntervalSeconds": 600,
+    "reconcileIntervalSeconds": 3600,
     "reconcileBatchSize": 500
+  },
+  "ollama": {
+    "embedding": {
+      "enabled": true,
+      "address": "http://ollama:11434",
+      "model": "all-minilm",
+      "dimensions": 384,
+      "timeoutSeconds": 30,
+      "batchSize": 32
+    }
   },
   "memory": {
     "limit": {
