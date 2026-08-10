@@ -379,9 +379,34 @@ refuses Caddy's removal, then recreates them once Caddy is healthy). Unlike `dep
 For a **Caddyfile-only** change (routes/headers, no compose change) skip the recreate entirely and
 reload in place, downtime-free: `sudo podman exec showcase_caddy_1 caddy reload --config /etc/caddy/Caddyfile`.
 
+**A new generator image** (a fix landed in the separate
+[`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo and its CI published a new
+`hippocampus-gen-{book,logs}:latest`) — run the generator deploy script:
+
+```sh
+sudo ./showcase/deploy-generators.sh          # both; skips whichever is already current
+sudo ./showcase/deploy-generators.sh book     # just one
+```
+
+Nothing on the host picks a new generator build up on its own, so this is the only path that ships
+one. `podman compose up -d` reuses the local image; the unit's `ExecStartPost`
+([`start-generators.sh`](../showcase/start-generators.sh)) only _starts_ the existing containers; and
+even `systemctl restart hippocampus-showcase` — a full-stack outage — leaves the generators on the
+stale image, because `--build` only rebuilds services that have a build context, not ones pinned to a
+registry `image:`. The script pulls, recreates **only** the generators with `up --no-deps`, and then
+verifies the running container actually carries the pulled image's
+`org.opencontainers.image.revision` — which is what catches podman-compose's silent
+`podman run` → `podman start` fallback onto the old image.
+
+> **Recreating the book generator wipes the book store.** Its command carries `--reset` and `--loop`
+> and the first cycle runs immediately, so it purges `hippocampus_book` and reloads Great
+> Expectations across its 2h pace window — the book console looks sparse until it refills. That is
+> inherent to recreating it, which is why the script **skips** a generator already running the pulled
+> image unless you pass `--force`.
+
 **Any other change** (compose file beyond the caddy service, other Caddyfiles, configs, image bumps
-for the demos) — **restart the systemd unit**. Its `ExecStart` is `up -d --build`, so the restart
-rebuilds any changed images and recreates the containers:
+for the demo servers) — **restart the systemd unit**. Its `ExecStart` is `up -d --build`, so the
+restart rebuilds any changed images and recreates the containers:
 
 ```sh
 sudo systemctl restart hippocampus-showcase

@@ -59,6 +59,15 @@ podman compose -f showcase/compose.showcase-combined.yaml up -d --build
 # rebuilt image never goes live. On a live host run this as root; it also loads the unit's env file.
 sudo ./showcase/deploy-site.sh
 
+# Pull the current hippocampus-gen images and recreate ONLY the generators, to ship a fix from the
+# separate hippocampus-gen repo. Nothing else on the host pulls that image - `up -d` reuses the local
+# copy, start-generators.sh only starts existing containers, and a unit restart rebuilds only
+# build-context services - so this is the sole path that ships a generator change. It skips a
+# generator already on the pulled image (pass --force to override) because recreating the BOOK
+# generator re-runs its `--reset` and wipes the book store, which then reloads over ~2h.
+sudo ./showcase/deploy-generators.sh          # both
+sudo ./showcase/deploy-generators.sh book     # or just one
+
 # Recreate ONLY the front Caddy (+ the two generators that require it) to apply a change to the
 # `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. A plain
 # `up -d caddy` recreates Caddy's whole depends_on tree (a full-stack outage); this scopes it with
