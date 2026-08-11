@@ -381,8 +381,12 @@
               <p>
                 A single pure-<strong>Go</strong> binary, published multi-arch
                 (amd64 + arm64), with <strong>OIDC</strong> (Auth0, Keycloak, or
-                any provider), <strong>JWT</strong>, and <strong>TLS</strong>
-                throughout.
+                any provider), <strong>JWT</strong>, and
+                <strong>TLS</strong> throughout. Per-RPC
+                <strong>reader/writer/admin</strong> tiers say what a caller may
+                do; optional <strong>group scoping</strong> says which records
+                they may do it to, so teams can share one store without sharing
+                their memories.
               </p>
             </article>
           </div>

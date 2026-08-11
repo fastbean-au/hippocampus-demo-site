@@ -113,6 +113,22 @@ Keycloak publishes roles under the nested `realm_access.roles` claim, which is w
 [Authorisation](https://github.com/fastbean-au/hippocampus/blob/main/docs/configuration.md#authorisation)). Keycloak's access token has no `aud` for these
 clients, so `auth.audience` is left empty (unenforced).
 
+**The realm defines no groups, so every token here is unscoped** — it sees the whole of whichever
+store it is talking to. That is deliberate: the showcase demonstrates _forgetting_, and each console
+already has a store to itself, so there is nothing within one for a partition to separate.
+[Group scoping](https://github.com/fastbean-au/hippocampus/blob/main/docs/configuration.md#group-scoping)
+is the feature you would reach for when several teams share **one** store, and it is worth knowing
+two things before copying this realm into a deployment that does:
+
+- A token carrying **no** `groups` claim is unscoped, which is the _most_ privileged shape a token
+  has, not the least. Add Keycloak group memberships plus a `groups` protocol mapper, set
+  `auth.groupsClaim` if you name it differently, and set `auth.requireGroupScope` so a token that
+  arrives without one is refused rather than silently handed everything.
+- `Sleep`, `Purge` and `PreviewConsolidation` act on the whole store and are refused to a scoped
+  token whatever its tier, so a generator or operator that calls them needs an unscoped one. In this
+  showcase `hippocampus-gen` uses `--reset` (a purge) and `--summarize` (which nudges `Sleep`), which
+  is exactly that case.
+
 Run it (dev mode, importing the realm):
 
 ```sh
