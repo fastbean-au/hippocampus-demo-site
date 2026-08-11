@@ -102,7 +102,7 @@
             "image": "https://hippocampus-demo.com/assets/og-image.png",
             "softwareHelp": "https://github.com/fastbean-au/hippocampus",
             "codeRepository": "https://github.com/fastbean-au/hippocampus",
-            "keywords": "storage engine, data retention, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
+            "keywords": "storage engine, data retention, edge ingestion, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
             "publisher": { "@id": "https://hippocampus-demo.com/#org" },
             "offers": {
               "@type": "Offer",
@@ -312,7 +312,15 @@
                 <strong>RabbitMQ</strong>, and <strong>MQTT</strong>, and an
                 <strong>OpenTelemetry</strong>
                 Collector exporter turns log records into memories, with
-                severity driving significance.
+                severity driving significance. At the edge, the
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/ingestor.md"
+                  rel="noopener"
+                  ><strong>ingestor</strong></a
+                >
+                stages data locally and promotes only what earns it: when an
+                event completes, a rules engine decides whether it reaches the
+                central store whole, condensed, or not at all.
               </p>
             </article>
             <article class="card">
