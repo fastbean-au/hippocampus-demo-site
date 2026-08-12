@@ -163,7 +163,7 @@ apt-get install -y --no-install-recommends podman podman-compose
 # Render the Keycloak realm from the tracked template, substituting two things so the running stack
 # never drifts from the realm:
 #
-#   1. The base domain. The template ships placeholder redirect URIs (book./logs.hippocampus.example);
+#   1. The base domain. The template ships placeholder redirect URIs (bluesky./book./logs.hippocampus.example);
 #      Keycloak rejects a sign-in whose redirect_uri is not listed ("Invalid parameter:
 #      redirect_uri"), so the real BASE_DOMAIN is substituted in. The 'admin@example.com' style ACME
 #      default and the realm name 'hippocampus' contain no 'hippocampus.example', so the replace only

@@ -232,6 +232,47 @@ LOGS_DOMAIN=logs.example ACME_EMAIL=you@example.com \
 Sign in to `https://book.example/ui` as `demo` (password `demo`) and browse the read-only
 console.
 
+### The Bluesky demo
+
+The combined stack's third console is the only one running on data nobody here controls. Posts come
+from a **curated feed generator** — [📰 Trending
+News](https://bsky.app/profile/did:plc:kkf4naxqmweop7dv4l2iqqf5/feed/news-2-0), headlines from
+verified news organisations, maintained by [@aendra.com](https://bsky.app/profile/aendra.com) — read
+over HTTP by `hippocampus-bluesky-bridge`, while the **likes and reposts that reinforce them arrive
+on the public Jetstream firehose**. Override the feed with `BLUESKY_FEED`.
+
+That split is the point. Every post is stored with the same significance, so nothing about a post
+itself decides whether it survives; only the engagement that follows it does, arriving as
+`RecallMemories` calls. Because a memory's id **is** the post's `at://` URI and a like names its
+target by that same URI, the two streams need no correlation state at all.
+
+Three settings make it legible:
+
+- **Backfill with seeded recall counts.** The whole feed (~500 headlines) is read at startup, and
+  each post's already-observed engagement is carried across as a damped recall count
+  (`round(log1p(likes + reposts))`). Without that, a visitor arriving in the first hours would see
+  several hundred headlines all looking equally untouched, because those likes happened before the
+  bridge was watching and the firehose will never replay them.
+- **Topic links.** `--topic-links` relates posts that share terms taken from the article URL's slug —
+  a keyword list someone wrote by hand — so a story several outlets covered becomes a cluster.
+- **Spreading activation.** `consolidation.linkRecallPropagation: 0.25` is what makes those links do
+  something: a like on one outlet's coverage pulls its related coverage a quarter of the way back
+  toward "just recalled" too. A story survives as a cluster where a lone post with the same
+  engagement does not.
+
+It needs **no generator container**: the bridge is both the loader and the load. It is also the only
+component here authenticating with the **OIDC client-credentials grant** rather than a static token,
+because a long-running bridge whose token expires does not stop — it keeps consuming and fails every
+write silently. It mints and refreshes its own against the shared realm, as `hippocampus-gen`.
+
+**Tuning note.** The feed delivers roughly 70 posts an hour, not 70 a second, so
+`config.showcase-bluesky.json` runs a much slower clock than the book and logs configs
+(`unitsOfAgeInDays: 0.125`, about three hours per age unit: an unengaged headline lasts ~6 hours, a
+well-liked one a day or more). The capacity figures (`capacityBytes: 500000`,
+`capacityMemories: 900`) are an **estimate** — Postgres `UsedBytes` is a live-row estimate, not a
+file size, so check the console's Decay tab after a day and adjust: if capacity pressure sits at
+×1.00 and eviction never fires, the caps are above the equilibrium and want lowering.
+
 ### Drive it with the generators
 
 The generators ship as published container images —
@@ -278,13 +319,14 @@ BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
 That serves five subdomains of the one domain — point A/AAAA records for each (or a single
 `*.${BASE_DOMAIN}` wildcard) at the host:
 
-| Subdomain                       | Serves                                                      |
-| ------------------------------- | ----------------------------------------------------------- |
-| `book.${BASE_DOMAIN}`           | the book console (`/ui`), gRPC on `:50051`                  |
-| `logs.${BASE_DOMAIN}`           | the logs console (`/ui`), gRPC on `:50052`                  |
-| `auth.${BASE_DOMAIN}`           | Keycloak — **shared**, one realm serving both consoles      |
-| `grafana.${BASE_DOMAIN}`        | Grafana — **shared**, both services' telemetry in one place |
-| `config-builder.${BASE_DOMAIN}` | the configuration and deployment wizard (see below)         |
+| Subdomain                       | Serves                                                       |
+| ------------------------------- | ------------------------------------------------------------ |
+| `bluesky.${BASE_DOMAIN}`        | the Bluesky console (`/ui`), gRPC on `:50053`                |
+| `book.${BASE_DOMAIN}`           | the book console (`/ui`), gRPC on `:50051`                   |
+| `logs.${BASE_DOMAIN}`           | the logs console (`/ui`), gRPC on `:50052`                   |
+| `auth.${BASE_DOMAIN}`           | Keycloak — **shared**, one realm serving every console       |
+| `grafana.${BASE_DOMAIN}`        | Grafana — **shared**, every service's telemetry in one place |
+| `config-builder.${BASE_DOMAIN}` | the configuration and deployment wizard (see below)          |
 
 Each of those is a whole application with its own navigation, so the landing page opens them in a new
 tab and the visitor's original tab stays on the site. Grafana additionally carries its own way back:
@@ -353,7 +395,7 @@ sudo ./showcase/install-ubuntu.sh \
 # --gen-secret <secret>   optional; must match the realm if you changed it
 ```
 
-Point DNS for the apex plus the `book.`/`logs.`/`auth.`/`grafana.`/`config-builder.` subdomains at
+Point DNS for the apex plus the `bluesky.`/`book.`/`logs.`/`auth.`/`grafana.`/`config-builder.` subdomains at
 the host (80/443
 reachable) so Caddy can provision TLS, and the self-driving showcase comes up on its own.
 

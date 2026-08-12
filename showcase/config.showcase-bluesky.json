@@ -53,14 +53,14 @@
     "addresses": ["http://opensearch:9200"],
     "username": "",
     "password": "",
-    "index": "hippocampus-memories",
+    "index": "bluesky-memories",
     "queueSize": 4096,
     "reconcileIntervalSeconds": 600,
     "reconcileBatchSize": 500
   },
   "memory": {
     "limit": {
-      "sizeBytes": 1048576
+      "sizeBytes": 8192
     },
     "minimumSignificance": 0
   },
@@ -68,23 +68,24 @@
     "minimumSignificance": 0
   },
   "sleep": {
-    "periodSeconds": 120
+    "periodSeconds": 180
   },
   "consolidation": {
     "defaultEventSignificanceValue": 0,
-    "defaultEventSignificancePercentile": 25,
+    "defaultEventSignificancePercentile": 0,
     "minimumAgeInDays": 0,
     "minimumRetentionInDays": 0,
     "aggressiveness": 1.0,
     "deletionThreshold": 5,
     "method": 1,
-    "unitsOfAgeInDays": 0.002,
+    "unitsOfAgeInDays": 0.125,
     "linkSignificanceWeight": 1.0,
-    "recallSignificanceWeight": 1.0,
-    "capacityMemories": 50000,
+    "linkRecallPropagation": 0.25,
+    "recallSignificanceWeight": 5.0,
+    "capacityMemories": 900,
     "capacityPressureExponent": 4.0,
-    "capacityBytes": 200000000,
-    "capacityBytesFloor": 180000000,
+    "capacityBytes": 500000,
+    "capacityBytesFloor": 400000,
     "walTriggerBytes": 0,
     "summarisationMinMemories": 0,
     "summarisationMinAgeInDays": 0,

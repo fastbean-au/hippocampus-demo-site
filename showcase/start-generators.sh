@@ -44,7 +44,7 @@ fi
 
 # Best-effort start: if the issuer never came up there is nothing better to do here, and a failed
 # start leaves the stack no worse off - so never fail the unit for this.
-echo "start-generators: starting hippocampus-gen-book / hippocampus-gen-logs"
-podman compose -f "${COMPOSE_FILE}" start hippocampus-gen-book hippocampus-gen-logs || true
+echo "start-generators: starting hippocampus-gen-book / hippocampus-gen-logs / hippocampus-bluesky-bridge"
+podman compose -f "${COMPOSE_FILE}" start hippocampus-gen-book hippocampus-gen-logs hippocampus-bluesky-bridge || true
 
 exit 0

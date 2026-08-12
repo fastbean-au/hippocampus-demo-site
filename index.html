@@ -6,7 +6,7 @@
     <title>Hippocampus — a finite, biologically-inspired memory engine</title>
     <meta
       name="description"
-      content="Hippocampus is a storage engine that keeps your most significant records and gracefully forgets the rest — bounded retention for logs, audit trails, and AI-agent memory, with no TTL rules. Try the live book and logs demos."
+      content="Hippocampus is a storage engine that keeps your most significant records and gracefully forgets the rest — bounded retention for logs, audit trails, and AI-agent memory, with no TTL rules. Try the live Bluesky, book, and logs demos."
     />
     <link rel="canonical" href="https://hippocampus-demo.com/" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -31,7 +31,7 @@
     />
     <meta
       property="og:description"
-      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live book and logs demos."
+      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live Bluesky, book, and logs demos."
     />
     <meta
       property="og:image"
@@ -52,7 +52,7 @@
     />
     <meta
       name="twitter:description"
-      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live book and logs demos."
+      content="Retention that keeps the highest-value context and gracefully forgets the noise. Try the live Bluesky, book, and logs demos."
     />
     <meta
       name="twitter:image"
@@ -405,9 +405,10 @@
         <div class="wrap">
           <h2 class="section-title">See it live</h2>
           <p class="section-lede">
-            The two consoles run a compressed decay clock, so forgetting,
-            summarisation, and eviction play out in minutes rather than days.
-            Sign in as
+            The consoles run a compressed decay clock, so forgetting,
+            summarisation, and eviction play out in minutes or hours rather than
+            days. The Bluesky one is the only demo running on data nobody here
+            controls — real posts, real attention, arriving live. Sign in as
             <code>demo</code> / <code>demo</code> to browse — the consoles are
             read-only for visitors. Each opens in a new tab, so this page stays
             where it is.
@@ -419,6 +420,27 @@
           </p>
 
           <div class="grid demos">
+            <article class="card demo-card">
+              <div class="demo-tag">bluesky</div>
+              <h3>Remember what people return to</h3>
+              <p>
+                Headlines from verified news organisations stream in from
+                Bluesky, every one arriving equally significant. The likes and
+                reposts that follow reinforce them, related coverage is linked
+                so a story survives as a cluster, and everything else quietly
+                decays — the store sorted purely by what people came back to.
+              </p>
+              <a
+                class="btn btn-primary"
+                href="https://bluesky.hippocampus-demo.com/ui"
+                target="_blank"
+                rel="noopener"
+                aria-label="Open the Bluesky console (opens in a new tab)"
+              >
+                Open the Bluesky console
+              </a>
+            </article>
+
             <article class="card demo-card">
               <div class="demo-tag">book</div>
               <h3>Summarise &amp; forget</h3>

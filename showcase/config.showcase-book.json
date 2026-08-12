@@ -89,7 +89,7 @@
     "deletionThreshold": 5,
     "method": 1,
     "unitsOfAgeInDays": 0.002,
-    "relationshipSignificanceWeight": 1.0,
+    "linkSignificanceWeight": 1.0,
     "recallSignificanceWeight": 1.0,
     "capacityMemories": 0,
     "capacityPressureExponent": 4.0,
