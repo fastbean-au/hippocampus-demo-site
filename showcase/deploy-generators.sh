@@ -27,6 +27,13 @@
 # failure rather than waiting. Recreating the bridge alone is safe at any time; recreating it while
 # its service is down means one immediate restart.
 #
+# REMOVAL RUNS IN THE OPPOSITE ORDER, and every name in the selection is freed before any of them is
+# recreated. compose stamps depends_on as a podman `--requires` edge, and podman refuses to remove a
+# container while something requires it - so the bridge must go first, and the service cannot be
+# removed at all until it has. Interleaving the two (remove service, recreate service, remove bridge,
+# ...) is what broke this script's first bluesky run: the removal was refused, the `|| true` hid it,
+# the taken name sent compose down landmine (2), and the "deploy" started the old container again.
+#
 # THE BOOK GENERATOR WIPES ITS STORE ON EVERY RECREATE. Its compose command carries `--reset` and
 # `--loop`, and the loop's first cycle runs immediately, so a new container purges hippocampus_book
 # and reloads Great Expectations from scratch across its 2h pace window. The book console therefore
@@ -183,6 +190,55 @@ revision_of() {
   podman inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2>/dev/null || true
 }
 
+# dependents_of - the containers in this project holding a podman `--requires` edge on the given
+# container id: the ones podman insists are removed BEFORE it. compose stamps those edges from
+# depends_on, which is why the bluesky bridge pins the bluesky service.
+dependents_of() {
+  local target="$1" name
+
+  if [[ -z "${target}" ]]; then
+    return 0
+  fi
+
+  for name in $(podman ps -a --filter "label=io.podman.compose.project=${PROJECT}" --format '{{.Names}}'); do
+    case " $(podman inspect -f '{{range .Dependencies}}{{.}} {{end}}' "${name}" 2>/dev/null) " in
+      *" ${target} "*) echo "${name}" ;;
+    esac
+  done
+}
+
+# remove_service - free a service's container name so the recreate below cannot degrade to `podman
+# start` (landmine (2)). The refusal is NOT swallowed: podman declines to remove a container while
+# another one `--requires` it, and swallowing that is exactly how a stale container survives an
+# otherwise "successful" deploy. Callers must work in reverse creation order, so that a dependent
+# INSIDE this run's selection is already gone by the time its service is removed; anything still
+# blocking at this point is therefore outside the selection, and is named in the error.
+remove_service() {
+  local service="$1" name id blockers
+
+  name="$(cname "${service}")"
+  id="$(cid "${name}")"
+
+  if [[ -z "${id}" ]]; then
+    return 0
+  fi
+
+  if podman rm -f "${name}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  blockers="$(dependents_of "${id}" | tr '\n' ' ')"
+
+  echo "deploy-generators: ERROR - podman refused to remove ${name}." >&2
+
+  if [[ -n "${blockers}" ]]; then
+    echo "deploy-generators: it is --require'd by: ${blockers}" >&2
+    echo "deploy-generators: select those in the same run so they are removed first - 'bluesky' takes the pair." >&2
+  fi
+
+  return 1
+}
+
 # running_services - the compose service name of every RUNNING container in this project, sorted.
 # Used to spot (and undo) collateral from a full-project down that compose may fire behind our back.
 running_services() {
@@ -269,6 +325,13 @@ BEFORE_RUNNING="$(running_services)"
 DEPLOYED=()
 SKIPPED=()
 
+# The run is planned before anything is touched, so that the teardown below can work through the
+# whole selection in reverse - which is the only order podman permits (see remove_service).
+PLAN=()
+PLAN_WANT_REV=()
+PLAN_OLD_ID=()
+PLAN_OLD_REV=()
+
 for service in "${SERVICES[@]}"; do
   IMAGE="$(image_for "${service}")"
 
@@ -296,8 +359,6 @@ for service in "${SERVICES[@]}"; do
     continue
   fi
 
-  # Free the name ourselves rather than asking compose to recreate - with the name taken, `podman
-  # run` clashes and silently degrades to `podman start` on the old container (landmine (2)).
   echo "deploy-generators: recreating ${service}"
 
   case "${service}" in
@@ -316,15 +377,34 @@ for service in "${SERVICES[@]}"; do
 
   esac
 
-  podman rm -f "${NAME}" >/dev/null 2>&1 || true
+  PLAN+=("${service}")
+  PLAN_WANT_REV+=("${NEW_REV}")
+  PLAN_OLD_ID+=("${OLD_ID}")
+  PLAN_OLD_REV+=("${OLD_REV}")
+done
+
+# Free every name up front, walking the selection BACKWARDS. Removal is the mirror of creation: the
+# bridge is created after the service because it dials it, and so must be removed before it, because
+# podman refuses to remove a container that another one `--requires`. Doing this per-service inside
+# the recreate loop below - service, then bridge - is what left the service's name taken, compose
+# degrading to `podman start` on the old container, and the deploy shipping nothing.
+for (( i = ${#PLAN[@]} - 1; i >= 0; i-- )); do
+  remove_service "${PLAN[i]}"
+done
+
+for (( i = 0; i < ${#PLAN[@]}; i++ )); do
+  service="${PLAN[i]}"
 
   # --no-deps keeps compose from walking the depends_on tree (keycloak, caddy, the stores). NOTE:
   # deliberately no --force-recreate - see landmine (1); the container is already gone in any case.
+  # A single `up` may well create a later member of the selection too (compose walks the project and
+  # every planned name is now free), which is harmless: its own turn then finds it already running,
+  # and assert_deployed still holds it to the pulled revision.
   podman compose -f "${COMPOSE_FILE}" up -d --no-deps "${service}"
 
-  assert_deployed "${service}" "${NEW_REV}" "${OLD_ID}"
+  assert_deployed "${service}" "${PLAN_WANT_REV[i]}" "${PLAN_OLD_ID[i]}"
 
-  DEPLOYED+=("${service}:${OLD_REV:0:12}->${NEW_REV:0:12}")
+  DEPLOYED+=("${service}:${PLAN_OLD_REV[i]:0:12}->${PLAN_WANT_REV[i]:0:12}")
 done
 
 # Undo any collateral: a diff_hashes-triggered full-project down (landmine (1), which fires after any
