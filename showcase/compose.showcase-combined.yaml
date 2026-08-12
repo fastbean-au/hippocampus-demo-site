@@ -342,8 +342,18 @@ services:
       - "--feed-poll-seconds"
       - "60"
       - "--topic-links"
+      # The feed's post opens an event and the public's replies to it become memories in that event,
+      # which is the conversation this instance exists to show. --capture-replies needs the UNFILTERED
+      # subscription (so: never a --dids here), because a reply is a record in the replier's own
+      # repository rather than in that of the post it answers.
       - "--events"
-      - "none"
+      - "thread"
+      - "--capture-replies"
+      # A reply is worth keeping without being worth as much as the headline it answers. A method-1
+      # lifetime is about significance/deletionThreshold age units, so at threshold 5 a capture lives
+      # ~0.6 units against a headline's 2 and a thread thins back to its head rather than going whole.
+      - "--capture-significance"
+      - "3"
       - "--group"
       - "news"
       - "--group-from-subject=false"

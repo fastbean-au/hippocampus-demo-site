@@ -265,13 +265,36 @@ component here authenticating with the **OIDC client-credentials grant** rather 
 because a long-running bridge whose token expires does not stop — it keeps consuming and fails every
 write silently. It mints and refreshes its own against the shared realm, as `hippocampus-gen`.
 
+**Threads.** The bridge runs `--events thread --capture-replies`, so a feed post opens an event and
+the public's replies to it are stored as memories **in that event** — the store's own shape used as
+intended: the post is the thread, the responses are what it accumulated. Replies arrive at
+`--capture-significance 3` against a headline's 10, so they are worth keeping without being worth as
+much as what they answer, and a thread thins back to its head rather than going all at once. Captured
+replies are deliberately left out of `--topic-links` (a reply carries no article card, and relating on
+its body relates posts that merely argue alike).
+
+This needs the **unfiltered** Jetstream subscription, which is why there is no `--dids` here and must
+not be: `wantedDids` selects on the repository a record was written in, and a reply — like a like —
+lives in the replier's own repository rather than the post author's. Adding one would silently take
+away both the replies and every scrap of engagement.
+
 **Tuning note.** The feed delivers roughly 70 posts an hour, not 70 a second, so
 `config.showcase-bluesky.json` runs a much slower clock than the book and logs configs
 (`unitsOfAgeInDays: 0.125`, about three hours per age unit: an unengaged headline lasts ~6 hours, a
-well-liked one a day or more). The capacity figures (`capacityBytes: 500000`,
-`capacityMemories: 900`) are an **estimate** — Postgres `UsedBytes` is a live-row estimate, not a
-file size, so check the console's Decay tab after a day and adjust: if capacity pressure sits at
-×1.00 and eviction never fires, the caps are above the equilibrium and want lowering.
+well-liked one a day or more; a reply, at significance 3, under two hours). The capacity figures
+(`capacityBytes: 850000`, `capacityMemories: 1600`) are an **estimate** — Postgres `UsedBytes` is a
+live-row estimate, not a file size, and they were raised from 500000/900 to make room for captured
+replies without re-measuring — so check the console's Decay tab after a day and adjust: if capacity
+pressure sits at ×1.00 and eviction never fires, the caps are above the equilibrium and want
+lowering.
+
+**Deliberately not `minimumRetentionInDays`.** It is the tempting knob for keeping a thread's head
+alive while its replies arrive, but it is measured in **whole days** and is a hard floor that
+overrides the capacity target. The smallest usable value, 1, is eight age units against a headline's
+natural two: it would suspend forgetting entirely for 24 hours while the retained set grew past
+`capacityBytes`, where eviction is powerless to recover it. Reply reinforcement already does the job
+it would be reached for — each reply recalls the root, resetting its decay clock and adding
+`recallSignificanceWeight` to it.
 
 ### Drive it with the generators
 
