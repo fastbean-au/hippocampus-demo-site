@@ -59,6 +59,11 @@
 # keep their uptime. Confirm containment after a run by comparing `podman ps` uptimes; do NOT try to
 # silence those errors with --force-recreate, which is landmine (1) and does bounce the stack.
 #
+# A run ends by WAITING for anything the stack lost as collateral to come back, rather than reading
+# `podman ps` once. A hippocampus server restart-looping on a booting Keycloak's 502s is regularly
+# caught between restarts by a single reading, which used to fail the run over a service that was
+# fine seconds later. Only a service still down after COLLATERAL_WAIT_SECONDS now fails it.
+#
 # NEITHER BLUESKY CONTAINER LOSES DATA on a recreate - that store is in Postgres - but the bridge
 # holds three things only in memory, all by design: its Jetstream cursor (a restart resumes at the
 # live tip, so the gap is skipped), its capture and author indexes, and its topic-term index. The
@@ -79,6 +84,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.showcase-combined.yaml"
 CADDY_SERVICE="caddy"
+
+# How long a service knocked over as collateral is given to come back before the run calls it stuck,
+# and how often that is re-checked. The wait costs nothing when nothing was knocked over - the poll
+# below exits on the first empty reading - so this is sized for the slow case: Keycloak booting, and
+# the hippocampus servers restart-looping on its 502s until it answers (see the poll for why).
+COLLATERAL_WAIT_SECONDS=90
+COLLATERAL_POLL_SECONDS=3
 
 FORCE=0
 SERVICES=()
@@ -247,6 +259,14 @@ running_services() {
     --format '{{ index .Labels "com.docker.compose.service"}}' | sort
 }
 
+# missing_services - the services that were running when this script started, are not running now,
+# and are not part of this run's selection (those are assert_deployed's business, not collateral).
+# Depends on BEFORE_RUNNING and SERVICES, both sorted, as `comm` requires.
+missing_services() {
+  comm -13 <(printf '%s\n' "${SERVICES[@]}" | sort) \
+    <(comm -23 <(echo "${BEFORE_RUNNING}") <(running_services))
+}
+
 # assert_caddy_healthy - the generators authenticate through the front Caddy, and on failure they
 # exit rather than retry indefinitely (podman does not reliably restart them afterwards - the whole
 # reason start-generators.sh exists). So refuse to recreate them while the issuer path is not
@@ -410,22 +430,51 @@ done
 # Undo any collateral: a diff_hashes-triggered full-project down (landmine (1), which fires after any
 # edit to the compose file) can stop backing services that --no-deps then declines to bring back up,
 # which would leave the stack half down behind healthy generators.
-for svc in $(comm -23 <(echo "${BEFORE_RUNNING}") <(running_services)); do
-  case " ${SERVICES[*]} " in
-    *" ${svc} "*) continue ;;
-  esac
+#
+# This is a WAIT, not a snapshot. A hippocampus server whose Keycloak is still booting exits on the
+# 502 from OIDC discovery and is restarted by podman, over and over, for as long as that takes - ~180
+# times in a few seconds is normal and self-resolving. A single reading of `podman ps` lands between
+# two of those restarts often enough to matter, and reports a service that is fine as one that never
+# came back. So poll until the set is empty, and only call what is left after the deadline stuck.
+DEADLINE=$(( SECONDS + COLLATERAL_WAIT_SECONDS ))
+ANNOUNCED=" "
 
-  echo "deploy-generators: restarting ${svc}, which compose stopped as collateral"
-  podman start "$(cname "${svc}")" >/dev/null 2>&1 || true
+while :; do
+  MISSING="$(missing_services)"
+
+  if [[ -z "${MISSING}" ]]; then
+    break
+  fi
+
+  for svc in ${MISSING}; do
+    case "${ANNOUNCED}" in
+
+      *" ${svc} "*)
+        ;;
+
+      *)
+        echo "deploy-generators: ${svc} is down as collateral; starting it and waiting for it to settle"
+        ANNOUNCED+="${svc} "
+        ;;
+
+    esac
+
+    podman start "$(cname "${svc}")" >/dev/null 2>&1 || true
+  done
+
+  if (( SECONDS >= DEADLINE )); then
+    break
+  fi
+
+  sleep "${COLLATERAL_POLL_SECONDS}"
 done
 
 # Report what actually happened rather than asserting a containment compose does not guarantee.
-COLLATERAL="$(comm -13 <(printf '%s\n' "${SERVICES[@]}" | sort) \
-  <(comm -23 <(echo "${BEFORE_RUNNING}") <(running_services)))"
+MISSING="$(missing_services)"
 
-if [[ -n "${COLLATERAL}" ]]; then
-  echo "deploy-generators: WARNING - these services did not come back and need attention:" >&2
-  echo "${COLLATERAL}" >&2
+if [[ -n "${MISSING}" ]]; then
+  echo "deploy-generators: WARNING - these services did not come back within ${COLLATERAL_WAIT_SECONDS}s and need attention:" >&2
+  echo "${MISSING}" >&2
 
   exit 1
 fi
