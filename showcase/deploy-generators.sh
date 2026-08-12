@@ -1,17 +1,31 @@
 #!/usr/bin/env bash
 #
-# deploy-generators.sh - pull the current hippocampus-gen images and recreate ONLY the generator
-# containers (hippocampus-gen-book / hippocampus-gen-logs), leaving every other service in the
-# combined showcase - Caddy, the consoles, Keycloak, the stores, the landing site - untouched.
+# deploy-generators.sh - pull the current image for a load-bearing container and recreate ONLY that
+# container, leaving every other service in the combined showcase - Caddy, the consoles, Keycloak,
+# the stores, the landing site - untouched.
 #
-# WHY THIS EXISTS: the generators track `:latest` from the separate hippocampus-gen repo, whose CI
-# publishes on every push to main. Nothing on this host pulls that image on its own: `podman compose
-# up -d` reuses the local copy, and the systemd unit's ExecStartPost (start-generators.sh) only
-# STARTS the existing containers - it never pulls, so it cannot pick a new build up. Even
-# `systemctl restart hippocampus-showcase`, which is a full-stack outage, leaves the generators on
-# the stale image. So shipping a generator fix previously meant a hand-run pull + rm + up, straight
-# through the two podman-compose 1.0.6 landmines below. This script is that sequence, done safely
-# and verified.
+# It covers four services, in two groups:
+#
+#   hippocampus-gen-book / hippocampus-gen-logs   the generators (the default selection)
+#   hippocampus-bluesky / hippocampus-bluesky-bridge   the Bluesky demo's service and its bridge
+#
+# The Bluesky pair is here because it has exactly the same problem and exactly the same answer: the
+# bridge is that demo's loader AND its load, and the two track `:latest` from the hippocampus repo's
+# releases. They are NOT in the default selection, though - deploying a service is heavier than
+# deploying a generator, so it must be asked for by name.
+#
+# WHY THIS EXISTS: these containers track `:latest` from a repo whose CI publishes without touching
+# this host. Nothing here pulls that image on its own: `podman compose up -d` reuses the local copy,
+# and the systemd unit's ExecStartPost (start-generators.sh) only STARTS the existing containers - it
+# never pulls, so it cannot pick a new build up. Even `systemctl restart hippocampus-showcase`, which
+# is a full-stack outage, leaves them on the stale image. So shipping a fix meant a hand-run pull +
+# rm + up, straight through the two podman-compose 1.0.6 landmines below. This script is that
+# sequence, done safely and verified.
+#
+# ORDER MATTERS WITHIN THE BLUESKY PAIR, so the selection is sorted rather than taken in the order
+# given: the service is recreated before its bridge, because the bridge dials it and exits on a dial
+# failure rather than waiting. Recreating the bridge alone is safe at any time; recreating it while
+# its service is down means one immediate restart.
 #
 # THE BOOK GENERATOR WIPES ITS STORE ON EVERY RECREATE. Its compose command carries `--reset` and
 # `--loop`, and the loop's first cycle runs immediately, so a new container purges hippocampus_book
@@ -38,10 +52,18 @@
 # keep their uptime. Confirm containment after a run by comparing `podman ps` uptimes; do NOT try to
 # silence those errors with --force-recreate, which is landmine (1) and does bounce the stack.
 #
+# NEITHER BLUESKY CONTAINER LOSES DATA on a recreate - that store is in Postgres - but the bridge
+# holds three things only in memory, all by design: its Jetstream cursor (a restart resumes at the
+# live tip, so the gap is skipped), its capture and author indexes, and its topic-term index. The
+# indexes are rebuilt by the startup feed backfill within a poll or two; the gap is simply lost, which
+# is what "a stream of the present, not a ledger" means.
+#
 # Run as root - the showcase containers live under root podman:
-#   sudo ./showcase/deploy-generators.sh              # both generators, skipping any already current
-#   sudo ./showcase/deploy-generators.sh book         # just the book generator
-#   sudo ./showcase/deploy-generators.sh --force logs # recreate even if already on the pulled image
+#   sudo ./showcase/deploy-generators.sh                # both generators, skipping any already current
+#   sudo ./showcase/deploy-generators.sh book           # just the book generator
+#   sudo ./showcase/deploy-generators.sh --force logs   # recreate even if already on the pulled image
+#   sudo ./showcase/deploy-generators.sh bluesky        # the bluesky service AND its bridge, in that order
+#   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the bridge (a flag change, no new service image)
 #
 # Override the env file location if it is not the install default:
 #   sudo SHOWCASE_ENV=/path/to/showcase.env ./showcase/deploy-generators.sh
@@ -65,7 +87,17 @@ while [[ $# -gt 0 ]]; do
       SERVICES+=("hippocampus-gen-$1")
       ;;
 
-    hippocampus-gen-book | hippocampus-gen-logs)
+    # A release updates the service image and the bridge image together, so the bare name selects
+    # both; the full names below select either on its own.
+    bluesky)
+      SERVICES+=("hippocampus-bluesky" "hippocampus-bluesky-bridge")
+      ;;
+
+    bluesky-bridge)
+      SERVICES+=("hippocampus-bluesky-bridge")
+      ;;
+
+    hippocampus-gen-book | hippocampus-gen-logs | hippocampus-bluesky | hippocampus-bluesky-bridge)
       SERVICES+=("$1")
       ;;
 
@@ -78,7 +110,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-generators: unknown argument '$1' (expected: book, logs, --force)" >&2
+      echo "deploy-generators: unknown argument '$1' (expected: book, logs, bluesky, bluesky-bridge, --force)" >&2
 
       exit 1
       ;;
@@ -88,9 +120,25 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# The default stays the two generators. Recreating a SERVICE is heavier than recreating its load, so
+# the bluesky pair is only ever deployed when named.
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
   SERVICES=(hippocampus-gen-book hippocampus-gen-logs)
 fi
+
+# Sort the selection into a canonical order, which also dedupes `bluesky bluesky-bridge`. The order is
+# the reason this exists rather than taking argv as given: a bridge recreated before its service dials
+# a socket that is not there and exits (see the header).
+ORDER=(hippocampus-bluesky hippocampus-bluesky-bridge hippocampus-gen-book hippocampus-gen-logs)
+SELECTED=()
+
+for candidate in "${ORDER[@]}"; do
+  case " ${SERVICES[*]} " in
+    *" ${candidate} "*) SELECTED+=("${candidate}") ;;
+  esac
+done
+
+SERVICES=("${SELECTED[@]}")
 
 # Match the systemd unit: load BASE_DOMAIN / ACME_EMAIL / GEN_SECRET so compose interpolation uses the
 # real deployment's values rather than the compose defaults (hippocampus.example). This matters more
@@ -250,11 +298,23 @@ for service in "${SERVICES[@]}"; do
 
   # Free the name ourselves rather than asking compose to recreate - with the name taken, `podman
   # run` clashes and silently degrades to `podman start` on the old container (landmine (2)).
-  if [[ "${service}" == "hippocampus-gen-book" ]]; then
-    echo "deploy-generators: recreating ${service} - NOTE: --reset purges the book store, which reloads over ~2h"
-  else
-    echo "deploy-generators: recreating ${service}"
-  fi
+  echo "deploy-generators: recreating ${service}"
+
+  case "${service}" in
+
+    hippocampus-gen-book)
+      echo "deploy-generators: NOTE - --reset purges the book store, which reloads over ~2h"
+      ;;
+
+    hippocampus-bluesky)
+      echo "deploy-generators: NOTE - the bluesky console is unavailable for a few seconds; its store is in postgres and survives"
+      ;;
+
+    hippocampus-bluesky-bridge)
+      echo "deploy-generators: NOTE - the bridge resumes at the firehose's live tip (that gap is lost) and rebuilds its in-memory indexes from the feed backfill"
+      ;;
+
+  esac
 
   podman rm -f "${NAME}" >/dev/null 2>&1 || true
 
