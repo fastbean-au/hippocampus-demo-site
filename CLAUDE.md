@@ -68,6 +68,22 @@ sudo ./showcase/deploy-site.sh
 sudo ./showcase/deploy-generators.sh          # both
 sudo ./showcase/deploy-generators.sh book     # or just one
 
+# Pull the current ghcr.io/fastbean-au/hippocampus image and move the SERVERS onto it, to ship a
+# release from the separate hippocampus repo. Nothing else on the host does this — the scripts above
+# cover the gen images, the front Caddy and the static site, and even a unit restart leaves the
+# servers on the stale image. Like the generators, it skips a server already on the pulled image
+# (`--force` to override), and `--dry-run` prints the blast radius without touching anything.
+#
+# The COST DIFFERS SHARPLY by selection, because compose stamps depends_on as podman `--requires`
+# edges and podman will not remove a container something requires. `bluesky` is cheap: only its
+# bridge requires it, so two containers move, the apex stays up and no store is touched. `book` or
+# `logs` is expensive: caddy AND both generators require BOTH of them, so all four come down first —
+# which means an apex outage of ~a minute and, because recreating gen-book re-runs its `--reset`, a
+# purged book store that reloads over ~2h. There is no cheaper partial. The script states both costs
+# and requires confirmation (`--yes` when there is no TTY) before it proceeds.
+sudo ./showcase/deploy-servers.sh bluesky     # cheap: apex stays up, no store touched
+sudo ./showcase/deploy-servers.sh             # all three; prompts about the apex + book store
+
 # Recreate ONLY the front Caddy (+ the two generators that require it) to apply a change to the
 # `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. A plain
 # `up -d caddy` recreates Caddy's whole depends_on tree (a full-stack outage); this scopes it with
