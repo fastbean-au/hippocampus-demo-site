@@ -288,6 +288,23 @@ replies without re-measuring — so check the console's Decay tab after a day an
 pressure sits at ×1.00 and eviction never fires, the caps are above the equilibrium and want
 lowering.
 
+**The forgotten log is on here** (`consolidation.tombstones.enabled`), and only here. It is what
+makes that tuning check answerable: the Decay tab's dry run says what is _about_ to go and
+`ExplainConsolidation` says where a memory stands, but neither can speak about a post that has
+already gone — so without it, "the caps are too low" and "the feed went quiet" look identical after
+the fact. This is the demo that earns it, because it is the one whose store is capacity-bound and
+whose losses are the point. The bounds are the defaults (`maxRows: 100000`, `maxAgeInDays: 30`); the
+log carries no post bodies, is excluded from the store's measured size, and so cannot itself raise
+the capacity pressure it is there to explain.
+
+**A visitor cannot see the panel**, though — `GetForgottenMemories` is `admin` (`auth/authz.go`) and
+the realm's `demo` user holds `reader`, so the Decay tab hides the forgotten-log card for everyone
+who logs in at the console. What the setting buys today is that the log is _being recorded_ (and the
+`hippocampus.tombstones` metrics with it), so the history exists to look at; showing it to visitors
+would mean granting `demo` the `admin` tier, which also hands them `DeleteForgottenMemories`,
+`Sleep` and the transfer RPCs. That is a realm change and a deliberate one — it is not implied by
+turning the log on.
+
 **Deliberately not `minimumRetentionInDays`.** It is the tempting knob for keeping a thread's head
 alive while its replies arrive, but it is measured in **whole days** and is a hard floor that
 overrides the capacity target. The smallest usable value, 1, is eight age units against a headline's

@@ -89,6 +89,11 @@
     "walTriggerBytes": 0,
     "summarisationMinMemories": 0,
     "summarisationMinAgeInDays": 0,
-    "summarisationMaxCandidates": 0
+    "summarisationMaxCandidates": 0,
+    "tombstones": {
+      "enabled": true,
+      "maxRows": 100000,
+      "maxAgeInDays": 30
+    }
   }
 }
