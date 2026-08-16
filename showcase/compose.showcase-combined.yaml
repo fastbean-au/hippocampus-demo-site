@@ -244,6 +244,12 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
+      # A SOFTER gate than the book service's: summarisation sits in the sleep cycle, not on the
+      # write path, so a model that is still pulling costs a logged, skipped candidate rather than a
+      # memory stored without its vector. Waiting anyway keeps the first cycles from filling the log
+      # with failures nobody needs to read.
+      ollama:
+        condition: service_healthy
 
   # ---- data generators (containerised): the self-driving load. Each authenticates as the
   #      hippocampus-gen client (client-credentials, admin role) to the SHARED issuer and dials its
@@ -443,8 +449,15 @@ services:
   # against 768, which matters on a box already running Postgres, OpenSearch, Keycloak, Grafana, two
   # Hippocampus services and two generators. Prefer nomic-embed-text for a real deployment.
   #
-  # The image ships no model, so the entrypoint starts the server, pulls the model, then hands the
-  # process back. The healthcheck gates on the MODEL being present rather than the port being open,
+  # It also holds a small GENERATION model for the bluesky service's auto-summarisation. That one is
+  # off the write path - it runs inside the sleep cycle, best-effort - so it is sized purely for how
+  # much of this box's CPU one summary may cost: qwen2.5:0.5b (~400 MB) rather than the config
+  # default llama3.2 (~2 GB). Prefer something larger in a real deployment; override with
+  # SUMMARY_MODEL, which needs no reindex (unlike EMBEDDING_MODEL, whose width is fixed at k-NN
+  # index creation).
+  #
+  # The image ships no model, so the entrypoint starts the server, pulls both models, then hands the
+  # process back. The healthcheck gates on the MODELS being present rather than the port being open,
   # because a server that is up but still pulling would let hippocampus start and quietly store its
   # first memories without vectors.
   ollama:
@@ -457,6 +470,7 @@ services:
         server=$$!
         until ollama list >/dev/null 2>&1; do sleep 1; done
         ollama pull ${EMBEDDING_MODEL:-all-minilm}
+        ollama pull ${SUMMARY_MODEL:-qwen2.5:0.5b}
         wait $$server
     volumes:
       - combined-ollama-data:/root/.ollama
@@ -464,7 +478,10 @@ services:
       - data
     healthcheck:
       test:
-        ["CMD-SHELL", "ollama list | grep -q ${EMBEDDING_MODEL:-all-minilm}"]
+        [
+          "CMD-SHELL",
+          "ollama list | grep -q ${EMBEDDING_MODEL:-all-minilm} && ollama list | grep -q ${SUMMARY_MODEL:-qwen2.5:0.5b}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 60

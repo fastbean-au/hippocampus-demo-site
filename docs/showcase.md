@@ -36,12 +36,17 @@ days. They differ where the two shapes differ:
 - **book** also enables **semantic search** (`ollama.embedding`), so the console's search tab offers
   keyword, semantic, and hybrid modes. See [Semantic search](#semantic-search) below for why it
   rides with the book example and not the logs one.
+- **bluesky** enables summarisation too, and is the only one that performs it **itself**
+  (`ollama.enabled` + `ollama.autoSummarise`): the book example's summaries are written by its
+  generator, which bluesky has no equivalent of. See
+  [Auto-summarisation](#auto-summarisation-bluesky) below.
 
 Both enable OpenSearch and ship metrics/traces to `otel-lgtm` by default.
 
 ## Semantic search
 
-The book stack runs an extra `ollama` service holding a small embedding model. Hippocampus turns
+The stack runs an extra `ollama` service holding a small embedding model (and, for
+[auto-summarisation](#auto-summarisation-bluesky), a small generation model). Hippocampus turns
 each memory body into a vector through it and stores that in the OpenSearch k-NN index, so the
 console's search tab can find a passage by **meaning** as well as by its words — searching the book
 for "a sudden change in fortune" surfaces passages that never use those words. The console reads the
@@ -63,10 +68,10 @@ changing the model means changing `ollama.embedding.dimensions` in the config to
 rebuilding the index (`--backfill-search --reindex`): a k-NN index fixes its vector width at
 creation.
 
-The `ollama` service pulls its model on first start, and its healthcheck gates on the **model**
-being present rather than the port being open — so `hippocampus` waits for it and no memory is
+The `ollama` service pulls its models on first start, and its healthcheck gates on **both being
+present** rather than on the port being open — so `hippocampus` waits for it and no memory is
 stored before it can be embedded. First boot therefore takes a minute or two longer than before,
-and the model persists in a volume across restarts.
+and the models persist in a volume across restarts.
 
 Two operational consequences worth knowing:
 
@@ -75,6 +80,50 @@ Two operational consequences worth knowing:
   and silently strip them from semantic search), which makes it far more expensive than the plain
   re-index it used to be.
 - A `--reset` book cycle re-embeds the whole book. That is the burst the sizing note accounts for.
+
+## Auto-summarisation (bluesky)
+
+Summarisation is two separate things, and the difference is why the book and bluesky examples are
+wired differently.
+
+The **candidate scan** only ever _identifies_ events worth condensing — enough memories
+(`consolidation.summarisationMinMemories`), quiet for long enough
+(`consolidation.summarisationMinAgeInDays`) — and publishes them on `GetSummarisationCandidates` for
+the console's Candidates tab. It runs inside the sleep cycle, so it needs `consolidation.enabled`
+(the default; a replica runs no sleep cycle and so never produces the list). The service does not
+read memory bodies, so it cannot write the summary itself.
+
+Something then has to **do** the summarising, by calling `ReplaceMemoriesWithSummary` with text it
+authored. In the book example that is the generator (`cmd/book --summarize`). Bluesky has no
+generator — the bridge is both loader and load, and it cannot summarise — so it uses the other
+route: `ollama.enabled` plus `ollama.autoSummarise` make the sleep cycle summarise its own
+candidates with the embedded LLM, right after the scan that found them. A visitor cannot stand in
+for either, because `SummariseMemories` and `ReplaceMemoriesWithSummary` are both `TierWriter`
+(`auth/authz.go`) and the demo login is a reader.
+
+The summary is stored as one `is_summary` memory replacing every memory of the event, inheriting the
+**highest significance among those it replaced** — so a condensed thread lives at least as long as
+its headline did. Because the scan excludes `is_summary` rows, a summarised thread only reappears as
+a candidate once fresh replies have accumulated again.
+
+The tuning is all about not spending the box's CPU on it:
+
+- `summarisationMaxCandidates: 3` bounds one cycle to three generations, and the scan orders by
+  memory count descending, so the fattest threads go first. With `ollama.timeoutSeconds: 45` the
+  worst case stays inside the 180 s `sleep.periodSeconds` (cycles are serialised, so an overrun only
+  delays the next one — but a cycle that never finishes on time is a cycle whose other passes are
+  late too).
+- `ollama.maxMemories: 40` and `ollama.promptCharLimit: 6000` keep the prompt inside a 0.5 B model's
+  usefully-attended context; `temperature: 0.2` keeps the summary faithful rather than inventive.
+- `summarisationMinAgeInDays` **must stay 0 here.** It is a whole-day integer, and under this
+  config's clock (`unitsOfAgeInDays: 0.125`) an unengaged headline lives ~6 hours and a reply under
+  two. Any value ≥ 1 asks for threads untouched for a day, which under this decay is a thread that
+  has already been deleted — the candidate list would be permanently empty. The cost of 0 is that an
+  active thread can be condensed mid-conversation; `summarisationMinMemories` is the only real
+  brake, and 3 is deliberately eager so the demo visibly does something.
+
+Failure is best-effort throughout: an unreachable model, a timeout, or an event that changed since
+the scan is logged and skipped without failing the sleep cycle.
 
 ### The one issuer rule
 
@@ -272,6 +321,11 @@ intended: the post is the thread, the responses are what it accumulated. Replies
 much as what they answer, and a thread thins back to its head rather than going all at once. Captured
 replies are deliberately left out of `--topic-links` (a reply carries no article card, and relating on
 its body relates posts that merely argue alike).
+
+Threads are also what makes this the one demo that **summarises itself**: an event that has gathered
+three or more replies is a candidate, and the sleep cycle condenses it with the embedded LLM rather
+than waiting for a client to supply the text — see
+[Auto-summarisation](#auto-summarisation-bluesky).
 
 This needs the **unfiltered** Jetstream subscription, which is why there is no `--dids` here and must
 not be: `wantedDids` selects on the repository a record was written in, and a reply — like a like —

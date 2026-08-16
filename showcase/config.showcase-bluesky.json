@@ -58,6 +58,16 @@
     "reconcileIntervalSeconds": 600,
     "reconcileBatchSize": 500
   },
+  "ollama": {
+    "enabled": true,
+    "autoSummarise": true,
+    "address": "http://ollama:11434",
+    "model": "qwen2.5:0.5b",
+    "timeoutSeconds": 45,
+    "maxMemories": 40,
+    "promptCharLimit": 6000,
+    "temperature": 0.2
+  },
   "memory": {
     "limit": {
       "sizeBytes": 8192
@@ -87,9 +97,9 @@
     "capacityBytes": 850000,
     "capacityBytesFloor": 680000,
     "walTriggerBytes": 0,
-    "summarisationMinMemories": 0,
+    "summarisationMinMemories": 3,
     "summarisationMinAgeInDays": 0,
-    "summarisationMaxCandidates": 0,
+    "summarisationMaxCandidates": 3,
     "tombstones": {
       "enabled": true,
       "maxRows": 100000,
