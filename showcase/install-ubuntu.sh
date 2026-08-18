@@ -36,7 +36,10 @@
 #   --gen-secret  <secret>   Secret for the two machine-to-machine clients (hippocampus-gen and
 #                            hippocampus-bluesky-bridge, which share it), substituted into BOTH the
 #                            generators and the rendered realm so they always match. Matches
-#                            [A-Za-z0-9._~+=/-]+. Defaults to the demo secret; change it for real use.
+#                            [A-Za-z0-9._~+=/-]+. Optional: omitted, it reuses whatever this host
+#                            already has, and generates a random one on a host that has none (or
+#                            that still carries the placeholder from the tracked template). It is
+#                            never printed - read it back from the env file if you need it.
 #   -h, --help               Show this help and exit.
 #
 set -euo pipefail
@@ -49,10 +52,14 @@ COMPOSE_FILE="showcase/compose.showcase-combined.yaml"
 # Records the sha256 of the realm JSON currently imported into Keycloak, so a re-run can tell whether
 # the rendered realm actually changed (domain, gen secret, or a template edit) and needs re-importing.
 IMPORTED_REALM_HASH_FILE="${ENV_DIR}/realm-imported.sha256"
+# The secret the tracked realm template carries. It is a PLACEHOLDER, never a usable secret: the
+# render below substitutes it, and resolve_gen_secret treats a host still carrying it as a host with
+# no secret at all. Defined here rather than beside the render because both need it.
+REALM_PLACEHOLDER_SECRET="showcase-gen-secret-change-me"
 
 BASE_DOMAIN=""
 ACME_EMAIL=""
-GEN_SECRET="showcase-gen-secret-change-me"
+GEN_SECRET=""
 
 die() {
   echo "ERROR: $*" >&2
@@ -143,10 +150,55 @@ done
 [[ -n "$BASE_DOMAIN" ]] || die "--base-domain is required (try --help)."
 [[ -n "$ACME_EMAIL" ]] || die "--acme-email is required (try --help)."
 
+# Resolve the gen secret when --gen-secret was not given. Three cases, and the ORDER is the point:
+#
+#   1. This host already has a real secret in ${ENV_FILE} - reuse it. A re-run must not rotate the
+#      secret, because that changes the rendered realm, which resets the Keycloak volume and
+#      re-imports on EVERY run. Re-running with no arguments is how the domain, the compose file and
+#      the realm template are re-applied, so it has to stay cheap and idempotent.
+#   2. This host has none, or still carries the template's placeholder - generate one. Defaulting to
+#      the placeholder is what put a publicly-mintable ADMIN token in front of the showcase: the
+#      secret is published in this repository, the token endpoint is on the internet, and the
+#      hippocampus-gen service account holds the admin role. A default nobody has to remember to
+#      override is the only version of this that is safe on a fresh host.
+#   3. --gen-secret wins over both, so rotating on purpose is still one flag.
+#
+# Generated from /dev/urandom rather than openssl, which keeps this working on a host where the
+# package phase above has not run yet; the charset is a subset of what the validation below allows.
+# `od -N24` reads a FIXED 24 bytes and exits, deliberately: the shorter `tr -dc ... | head -c 48`
+# idiom leaves tr writing into a closed pipe, and under `set -o pipefail` that SIGPIPE becomes the
+# assignment's exit status and aborts the install - intermittently, which is the worst way to find
+# out.
+resolve_gen_secret() {
+  local existing=""
+
+  if [[ -f "${ENV_FILE}" ]]; then
+    existing="$(sed -n 's/^GEN_SECRET=//p' "${ENV_FILE}" | tail -n 1)"
+  fi
+
+  if [[ -n "${existing}" && "${existing}" != "${REALM_PLACEHOLDER_SECRET}" ]]; then
+    GEN_SECRET="${existing}"
+
+    echo "==> Reusing the gen secret already recorded in ${ENV_FILE}"
+
+    return 0
+  fi
+
+  GEN_SECRET="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+
+  [[ ${#GEN_SECRET} -eq 48 ]] || die "failed to generate a gen secret from /dev/urandom."
+
+  echo "==> Generated a new gen secret; it is recorded in ${ENV_FILE} and is not printed here"
+
+  return 0
+}
+
+[[ -n "$GEN_SECRET" ]] || resolve_gen_secret
+
 # The gen secret is substituted verbatim into the rendered realm JSON (below), so constrain it to
 # characters that are safe both as a sed replacement and inside a JSON string - no quotes, backslash,
 # ampersand, pipe, or whitespace. This keeps the render simple and total; loosen it only alongside a
-# JSON-aware injector. The generated demo default satisfies it.
+# JSON-aware injector. Both a reused and a generated secret satisfy it.
 [[ "$GEN_SECRET" =~ ^[A-Za-z0-9._~+=/-]+$ ]] ||
   die "--gen-secret must match [A-Za-z0-9._~+=/-]+ (it is injected into the realm JSON)."
 
@@ -174,8 +226,8 @@ apt-get install -y --no-install-recommends podman podman-compose
 #   2. The machine-to-machine client secret. The generators and the Bluesky bridge authenticate with
 #      GEN_SECRET (passed into the compose file); the realm's client secrets must be the SAME value
 #      or the client-credentials grant fails. Both come from GEN_SECRET here, so they always match -
-#      no second place to edit. The template's secret equals the GEN_SECRET default, so the default
-#      render is a no-op for it. The two clients deliberately SHARE the secret: they differ by
+#      no second place to edit. The template's secret is only ever a placeholder to substitute; see
+#      resolve_gen_secret above. The two clients deliberately SHARE the secret: they differ by
 #      client_id (which is what the topology view identifies a caller by) and by role (admin vs
 #      writer), and a second secret in the same env file on the same host would separate nothing.
 #
@@ -184,7 +236,6 @@ apt-get install -y --no-install-recommends podman podman-compose
 REALM_TEMPLATE="${SCRIPT_DIR}/keycloak/realm-hippocampus.json"
 REALM_GENERATED="${SCRIPT_DIR}/keycloak/realm-hippocampus.generated.json"
 REALM_RELATIVE="./keycloak/realm-hippocampus.generated.json"
-REALM_PLACEHOLDER_SECRET="showcase-gen-secret-change-me"
 
 [[ -f "${REALM_TEMPLATE}" ]] || die "expected realm template at ${REALM_TEMPLATE}."
 
