@@ -63,6 +63,18 @@
 #      successful recreate. Freeing every name first makes that unreachable; assert_deployed catches
 #      it regardless by comparing the running container's image revision against the pulled one.
 #
+# THE FIRST RUN AFTER A COMPOSE-FILE EDIT IS NOT A TARGETED DEPLOY - it is a full-stack bounce, and
+# this script cannot prevent it. Landmine (1) is not only reached by --force-recreate: the same
+# handler fires on `len(diff_hashes)`, and podman-compose stamps a hash of the WHOLE YAML into every
+# container, so after any edit to compose.showcase-combined.yaml every container's stored hash
+# differs and the full-project down runs on the next `up` - whatever service was named, and with
+# --no-deps ignored (get_excluded does not consult it). Naming one service buys nothing on that run:
+# Postgres, OpenSearch, Keycloak and Ollama go down with it. So after editing the compose file, take
+# the outage deliberately - `systemctl restart hippocampus-showcase`, or a run of this script with
+# the blast radius understood - and use the targeted form from the run AFTER that, once every
+# container carries the current hash. The collateral wait at the end of a run exists precisely
+# because this happens; it restarts what the down stopped, but it cannot make the deploy contained.
+#
 # EXPECTED (ALARMING-LOOKING) OUTPUT: compose walks every service, so for each one already running you
 # will see `Error: ... name is already in use` and `exit code: 125`. That is landmine (2) firing
 # harmlessly - `podman start` on a running container is a no-op. Do NOT silence it with
