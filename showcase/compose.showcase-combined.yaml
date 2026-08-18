@@ -380,8 +380,14 @@ services:
       - "bluesky"
       - "--oidc-issuer"
       - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      # Its OWN client, not the generators' hippocampus-gen, and writer rather than admin. The
+      # topology view draws an inbound component under the client_id it authenticated with and
+      # merges it with a declared component of the same name, so sharing hippocampus-gen would have
+      # put the bridge, the book generator and the logs generator behind one indistinguishable node
+      # - and left the declared entry in config.showcase-bluesky.json unable to merge with any of
+      # them. The secret is deliberately still GEN_SECRET; see the realm template for why.
       - "--oidc-client-id"
-      - "hippocampus-gen"
+      - "hippocampus-bluesky-bridge"
       - "--oidc-client-secret"
       - "${GEN_SECRET:-showcase-gen-secret-change-me}"
     networks:

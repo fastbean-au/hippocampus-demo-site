@@ -57,6 +57,18 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "hippocampus-bluesky-bridge",
+      "name": "Hippocampus Bluesky Bridge (machine-to-machine)",
+      "description": "Confidential client for the Bluesky bridge: client-credentials grant, writer role. It exists separately from hippocampus-gen so the bridge is identifiable in the deployment topology view - a component is drawn under the client_id it authenticates with, and a declared component merges with the observed one only when the two names match. It carries writer rather than admin because every RPC the bridge issues (StoreMemory, StoreEvent, RecallMemories, LinkMemories, ImportBatch, DeleteMemories) is writer-tier. It shares GEN_SECRET: a second secret would buy nothing when both live in the same env file on the same host, and the separation that matters here is of identity, not of credential.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "showcase-gen-secret-change-me",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "users": [
@@ -77,6 +89,12 @@
       "enabled": true,
       "serviceAccountClientId": "hippocampus-gen",
       "realmRoles": ["admin"]
+    },
+    {
+      "username": "service-account-hippocampus-bluesky-bridge",
+      "enabled": true,
+      "serviceAccountClientId": "hippocampus-bluesky-bridge",
+      "realmRoles": ["writer"]
     }
   ]
 }

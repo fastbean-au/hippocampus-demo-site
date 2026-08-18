@@ -30,7 +30,10 @@ This repo holds two things for the Hippocampus demo:
    keyword; it is deliberately NOT wired to the logs service, since embedding sits on the write path
    and the logs generator's continuous trickle would spend the VM's shared CPU on the less
    interesting demo (see [`docs/showcase.md`](docs/showcase.md#semantic-search)). The realm is **read-only for visitors** (one
-   `demo`/`demo` login); the generators write as the `hippocampus-gen` service account (`admin`).
+   `demo`/`demo` login); the generators write as the `hippocampus-gen` service account (`admin`) and
+   the Bluesky bridge as its own `hippocampus-bluesky-bridge` one (`writer`, sharing GEN_SECRET) -
+   separate because the Deployment tab draws an inbound component under the `client_id` it
+   authenticated with, so one shared client would have merged all three into a single node.
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
    Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options);
    [`showcase/uninstall-ubuntu.sh`](showcase/uninstall-ubuntu.sh) reverses it (keeping volumes and

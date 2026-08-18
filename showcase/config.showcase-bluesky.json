@@ -105,5 +105,14 @@
       "maxRows": 100000,
       "maxAgeInDays": 30
     }
+  },
+  "topology": {
+    "components": [
+      {
+        "name": "hippocampus-bluesky-bridge",
+        "kind": "bridge",
+        "healthUrl": "http://hippocampus-bluesky-bridge:8090"
+      }
+    ]
   }
 }
