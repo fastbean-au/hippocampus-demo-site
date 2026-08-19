@@ -31,9 +31,15 @@ This repo holds two things for the Hippocampus demo:
    and the logs generator's continuous trickle would spend the VM's shared CPU on the less
    interesting demo (see [`docs/showcase.md`](docs/showcase.md#semantic-search)). The realm is **read-only for visitors** (one
    `demo`/`demo` login); the generators write as the `hippocampus-gen` service account (`admin`) and
-   the Bluesky bridge as its own `hippocampus-bluesky-bridge` one (`writer`, sharing GEN_SECRET) -
-   separate because the Deployment tab draws an inbound component under the `client_id` it
-   authenticated with, so one shared client would have merged all three into a single node.
+   the two Bluesky feed bridges as their own `hippocampus-bluesky-bridge` /
+   `hippocampus-bluesky-bridge-worldnews` ones (`writer`, sharing GEN_SECRET) - separate because the
+   Deployment tab draws an inbound component under the `client_id` it authenticated with, so one
+   shared client would have merged them all into a single node. The **bluesky** service takes two
+   curated feeds (Trending News, WorldNews) into ONE store: `--feed` is a single URI, so a second
+   feed is a second bridge container rather than a second flag. Only `hippocampus-bluesky-bridge`
+   reads the firehose - reinforcement and deletes are blind by id, so it already covers the whole
+   shared store, and the WorldNews bridge runs `--recall=false --honour-deletes=false --dids` to
+   avoid doing either twice (see [`docs/showcase.md`](docs/showcase.md#two-feeds-one-store)).
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
    Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options);
    [`showcase/uninstall-ubuntu.sh`](showcase/uninstall-ubuntu.sh) reverses it (keeping volumes and

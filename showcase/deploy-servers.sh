@@ -19,14 +19,16 @@
 #   hippocampus-gen-book      --requires-->  caddy, hippocampus-book, hippocampus-logs
 #   hippocampus-gen-logs      --requires-->  caddy, hippocampus-book, hippocampus-logs
 #   hippocampus-bluesky-bridge--requires-->  caddy, hippocampus-book, hippocampus-logs, hippocampus-bluesky
+#   hippocampus-bluesky-bridge-worldnews
+#                             --requires-->  caddy, hippocampus-book, hippocampus-logs, hippocampus-bluesky
 #
-# So touching book OR logs means removing the two generators, the bridge and CADDY first - there is no
+# So touching book OR logs means removing the two generators, BOTH bluesky bridges and CADDY first - there is no
 # cheaper partial, because caddy and both generators require BOTH servers. Removal runs in reverse
 # creation order and every name is freed before anything is recreated; bring-up runs forwards.
 #
-# BLUESKY IS THE CHEAP CASE. hippocampus-bluesky is required only by its bridge - not by caddy, not by
-# the generators - so `deploy-servers.sh bluesky` recreates exactly two containers, keeps the apex up
-# and touches no store. Prefer it when a release only needs proving on one service.
+# BLUESKY IS THE CHEAP CASE. hippocampus-bluesky is required only by its two bridges - not by caddy,
+# not by the generators - so `deploy-servers.sh bluesky` recreates exactly three containers, keeps the
+# apex up and touches no store. Prefer it when a release only needs proving on one service.
 #
 # TWO COSTS ARE UNAVOIDABLE once book or logs is in the selection, and the script states both before
 # it touches anything:
@@ -85,7 +87,7 @@
 #
 # Run as root - the showcase containers live under root podman:
 #   sudo ./showcase/deploy-servers.sh                 # all three servers, skipping any already current
-#   sudo ./showcase/deploy-servers.sh bluesky         # just bluesky + its bridge; apex stays up, no wipe
+#   sudo ./showcase/deploy-servers.sh bluesky         # just bluesky + its two bridges; apex stays up, no wipe
 #   sudo ./showcase/deploy-servers.sh book logs       # the pair that costs the apex and the book store
 #   sudo ./showcase/deploy-servers.sh --yes           # non-interactive; required when there is no TTY
 #   sudo ./showcase/deploy-servers.sh --force bluesky # recreate even if already on the pulled image
@@ -170,6 +172,7 @@ ORDER=(
   hippocampus-gen-book
   hippocampus-gen-logs
   hippocampus-bluesky-bridge
+  hippocampus-bluesky-bridge-worldnews
 )
 
 # Match the systemd unit: load BASE_DOMAIN / ACME_EMAIL / GEN_SECRET so compose interpolation uses the

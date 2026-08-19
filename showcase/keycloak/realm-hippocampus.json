@@ -69,6 +69,18 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "hippocampus-bluesky-bridge-worldnews",
+      "name": "Hippocampus Bluesky Bridge - WorldNews feed (machine-to-machine)",
+      "description": "Confidential client for the second Bluesky bridge, the one polling the WorldNews feed into the same store: client-credentials grant, writer role. Its own client for the same reason the first bridge has one - the topology view draws a caller under its client_id, so a shared client would collapse the two bridges into one node.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "showcase-gen-secret-change-me",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "users": [
@@ -94,6 +106,12 @@
       "username": "service-account-hippocampus-bluesky-bridge",
       "enabled": true,
       "serviceAccountClientId": "hippocampus-bluesky-bridge",
+      "realmRoles": ["writer"]
+    },
+    {
+      "username": "service-account-hippocampus-bluesky-bridge-worldnews",
+      "enabled": true,
+      "serviceAccountClientId": "hippocampus-bluesky-bridge-worldnews",
       "realmRoles": ["writer"]
     }
   ]

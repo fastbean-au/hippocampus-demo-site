@@ -284,11 +284,17 @@ console.
 ### The Bluesky demo
 
 The combined stack's third console is the only one running on data nobody here controls. Posts come
-from a **curated feed generator** — [📰 Trending
-News](https://bsky.app/profile/did:plc:kkf4naxqmweop7dv4l2iqqf5/feed/news-2-0), headlines from
-verified news organisations, maintained by [@aendra.com](https://bsky.app/profile/aendra.com) — read
-over HTTP by `hippocampus-bluesky-bridge`, while the **likes and reposts that reinforce them arrive
-on the public Jetstream firehose**. Override the feed with `BLUESKY_FEED`.
+from **two curated feed generators**, read over HTTP, while the **likes and reposts that reinforce
+them arrive on the public Jetstream firehose**:
+
+| Feed                                                                                                                                                                                                                                                             | Bridge                                 | Override                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------ |
+| [📰 Trending News](https://bsky.app/profile/did:plc:kkf4naxqmweop7dv4l2iqqf5/feed/news-2-0) — headlines from verified news organisations, by [@aendra.com](https://bsky.app/profile/aendra.com)                                                                  | `hippocampus-bluesky-bridge`           | `BLUESKY_FEED`           |
+| [WorldNews](https://bsky.app/profile/did:plc:3sn6bogankaicebzdb7liro3/feed/aaajaq4ut77am) — world coverage from Reuters, AP, the Guardian, the BBC, Al Jazeera and about fifteen others, by [@allyann.bsky.social](https://bsky.app/profile/allyann.bsky.social) | `hippocampus-bluesky-bridge-worldnews` | `BLUESKY_FEED_WORLDNEWS` |
+
+`--feed` takes a **single** at:// URI — one feed per process — so a second feed is a second container,
+not a second flag. Both write into the **same service and the same store**; see
+[Two feeds, one store](#two-feeds-one-store) for how the work is divided between them.
 
 That split is the point. Every post is stored with the same significance, so nothing about a post
 itself decides whether it survives; only the engagement that follows it does, arriving as
@@ -309,12 +315,44 @@ Three settings make it legible:
   toward "just recalled" too. A story survives as a cluster where a lone post with the same
   engagement does not.
 
-It needs **no generator container**: the bridge is both the loader and the load. It is also the only
-component here authenticating with the **OIDC client-credentials grant** rather than a static token,
-because a long-running bridge whose token expires does not stop — it keeps consuming and fails every
-write silently. It mints and refreshes its own against the shared realm, as `hippocampus-gen`.
+It needs **no generator container**: the bridges are both the loader and the load. They are also the
+only components here authenticating with the **OIDC client-credentials grant** rather than a static
+token, because a long-running bridge whose token expires does not stop — it keeps consuming and fails
+every write silently. Each mints and refreshes its own against the shared realm, under its own
+`client_id` (`hippocampus-bluesky-bridge` / `hippocampus-bluesky-bridge-worldnews`) so the Deployment
+tab draws them as two components rather than one — they share `GEN_SECRET`, differing by id and not by
+secret.
 
-**Threads.** The bridge runs `--events thread --capture-replies`, so a feed post opens an event and
+#### Two feeds, one store
+
+The WorldNews bridge is deliberately **not a twin** of the Trending News one. Everything that reads
+the firehose is left to the first bridge, because both see the same public stream and would otherwise
+act on it twice. So the second runs `--recall=false --honour-deletes=false`, and narrows its
+(unavoidable) Jetstream subscription to the feed owner's near-silent repository with `--dids`:
+
+- **Reinforcement is blind by id.** A like names its target's `at://` URI and the service reinforces
+  whatever it holds, so the first bridge already reinforces WorldNews posts — the store is shared.
+  Two recallers would count every like **twice**, inflating every recall count against the backfill's
+  one-shot seeds.
+- **Deletes are blind by id** in exactly the same way, and are likewise already honoured for these
+  posts by the first bridge.
+- **The trade:** this feed is only as reinforced as `hippocampus-bluesky-bridge` is alive. Nothing in
+  the second bridge replays engagement, so while the first is down these posts decay unopposed. It
+  also logs the `--feed with --dids receives no engagement at all` warning on startup — here that is
+  the intent, not the mistake it warns about.
+
+They share the **group** (`news`) on purpose. The feeds overlap heavily — both aggregate the same wire
+services — and a duplicate write is an idempotent `AlreadyExists`, so whichever bridge saw a shared
+story first owns it; splitting the groups would file the same story differently from one hour to the
+next. `feed=worldnews` metadata records the source where it can be recorded: on the posts only that
+feed carried. Its absence means Trending News reached the story first. The two are cleanly separable
+in **telemetry** regardless, by `--metrics-group` (`bluesky` / `bluesky-worldnews`).
+
+Threads stay a Trending News feature: reply capture matches against the capturing process's **own**
+index of stored posts, so the second bridge runs no `--events`/`--capture-replies` and its headlines
+live or die on engagement alone.
+
+**Threads.** The Trending News bridge runs `--events thread --capture-replies`, so a feed post opens an event and
 the public's replies to it are stored as memories **in that event** — the store's own shape used as
 intended: the post is the thread, the responses are what it accumulated. Replies arrive at
 `--capture-significance 3` against a headline's 10, so they are worth keeping without being worth as
@@ -327,12 +365,18 @@ three or more replies is a candidate, and the sleep cycle condenses it with the 
 than waiting for a client to supply the text — see
 [Auto-summarisation](#auto-summarisation-bluesky).
 
-This needs the **unfiltered** Jetstream subscription, which is why there is no `--dids` here and must
-not be: `wantedDids` selects on the repository a record was written in, and a reply — like a like —
-lives in the replier's own repository rather than the post author's. Adding one would silently take
-away both the replies and every scrap of engagement.
+This needs the **unfiltered** Jetstream subscription, which is why there is no `--dids` on _that_
+bridge and must not be: `wantedDids` selects on the repository a record was written in, and a reply —
+like a like — lives in the replier's own repository rather than the post author's. Adding one would
+silently take away both the replies and every scrap of engagement. The WorldNews bridge carries a
+`--dids` for exactly the inverse reason: it consumes no engagement at all, so narrowing its
+subscription costs nothing and saves a second copy of the whole public firehose.
 
-**Tuning note.** The feed delivers roughly 70 posts an hour, not 70 a second, so
+**Tuning note.** Capacity is **store-wide**, not per group or per feed, so the second feed competes
+for the same `capacityMemories: 1600` / `capacityBytes: 850000` as the first: expect faster eviction
+and shorter effective lifetimes than the figures below until the caps are re-measured against the
+combined inflow (the overlap between the two feeds absorbs some of it, but not all). The Decay tab
+after a day is the answer, as ever. The feeds deliver roughly 70 posts an hour each, not 70 a second, so
 `config.showcase-bluesky.json` runs a much slower clock than the book and logs configs
 (`unitsOfAgeInDays: 0.125`, about three hours per age unit: an unengaged headline lasts ~6 hours, a
 well-liked one a day or more; a reply, at significance 3, under two hours). The capacity figures

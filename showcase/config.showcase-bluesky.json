@@ -112,6 +112,11 @@
         "name": "hippocampus-bluesky-bridge",
         "kind": "bridge",
         "healthUrl": "http://hippocampus-bluesky-bridge:8090"
+      },
+      {
+        "name": "hippocampus-bluesky-bridge-worldnews",
+        "kind": "bridge",
+        "healthUrl": "http://hippocampus-bluesky-bridge-worldnews:8090"
       }
     ]
   }

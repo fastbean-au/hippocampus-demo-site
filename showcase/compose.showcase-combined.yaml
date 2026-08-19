@@ -403,6 +403,95 @@ services:
       caddy:
         condition: service_healthy
 
+  # A SECOND feed on the same service and the same store: WorldNews
+  # (at://did:plc:3sn6bogankaicebzdb7liro3/app.bsky.feed.generator/aaajaq4ut77am) - world coverage from
+  # Reuters, AP, the Guardian, the BBC, Al Jazeera and about fifteen others, maintained by
+  # @allyann.bsky.social. `--feed` takes a single URI, one feed per process, so a second feed is a
+  # second container rather than a second flag.
+  #
+  # It is deliberately NOT a twin of the bridge above: everything that reads the FIREHOSE is left to
+  # that one, because both see the same public stream and would act on it twice.
+  #
+  #   --recall=false          Reinforcement is blind by id - a like names its target's at:// URI and
+  #                           the service reinforces whatever it holds - so the bridge above already
+  #                           reinforces THESE posts too, the store being shared. Two recallers would
+  #                           count every like twice and inflate every recall count against the
+  #                           backfill's one-shot seeds.
+  #   --honour-deletes=false  A delete is blind by id in the same way, so it is likewise already
+  #                           honoured for these posts by the bridge above.
+  #   --dids                  The Jetstream subscription is opened unconditionally, so it is narrowed
+  #                           to the feed owner's (near-silent) repository rather than left consuming
+  #                           the whole public firehose to produce frames nothing here acts on. This
+  #                           logs the "--feed with --dids receives no engagement at all" warning at
+  #                           startup; here that is the intent rather than the mistake it warns about.
+  #
+  # The cost of that split, stated plainly: this feed is only as reinforced as the bridge above is
+  # alive. Nothing here replays engagement, so while that container is down these posts decay
+  # unopposed. And no --events/--capture-replies either - reply capture matches against the capturing
+  # process's OWN index of stored posts, so threads (and with them the auto-summarisation demo) stay a
+  # Trending News feature. These are headlines that live or die on engagement alone.
+  hippocampus-bluesky-bridge-worldnews:
+    image: ghcr.io/fastbean-au/hippocampus-bluesky-bridge:latest
+    restart: unless-stopped
+    command:
+      - "--address"
+      - "hippocampus-bluesky:50051"
+      - "--feed"
+      - "${BLUESKY_FEED_WORLDNEWS:-at://did:plc:3sn6bogankaicebzdb7liro3/app.bsky.feed.generator/aaajaq4ut77am}"
+      - "--feed-backfill"
+      - "--feed-seed-recalls"
+      - "--feed-poll-seconds"
+      - "60"
+      - "--topic-links"
+      # The firehose belongs to the other bridge; see above.
+      - "--dids"
+      - "did:plc:3sn6bogankaicebzdb7liro3"
+      - "--recall=false"
+      - "--honour-deletes=false"
+      # The same group as the other feed, deliberately. The two overlap heavily - both aggregate the
+      # same wire services - and a duplicate write is an idempotent AlreadyExists, so whichever bridge
+      # saw a shared story first owns it. Splitting the groups would file the same story differently
+      # from one hour to the next. `feed=worldnews` records the source where it can be recorded: on
+      # the posts only this feed carried. Its absence means the other feed reached the story first.
+      - "--group"
+      - "news"
+      - "--group-from-subject=false"
+      - "--significance"
+      - "10"
+      - "--metadata"
+      - "source=bluesky"
+      - "--metadata"
+      - "feed=worldnews"
+      - "--metadata-header"
+      - "handle"
+      - "--metadata-header"
+      - "lang"
+      - "--metrics"
+      - "--otlp-endpoint"
+      - "otel-lgtm:4317"
+      # Its own metrics group, so the two bridges' throughput is separable in Grafana even though
+      # their memories are not.
+      - "--metrics-group"
+      - "bluesky-worldnews"
+      - "--oidc-issuer"
+      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      # Its own client, for the reason the bridge above has one: the topology view draws an inbound
+      # component under the client_id it authenticated with, so a shared client would have merged the
+      # two bridges into a single indistinguishable node. Secret is GEN_SECRET again; see the realm.
+      - "--oidc-client-id"
+      - "hippocampus-bluesky-bridge-worldnews"
+      - "--oidc-client-secret"
+      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+    networks:
+      - shared
+    depends_on:
+      hippocampus-bluesky:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
+
   # ---- shared data stores (one Postgres with a database per tenant, one OpenSearch with an index
   #      per tenant); the book/logs services reach these by service name over the `data` network ----
   postgres:

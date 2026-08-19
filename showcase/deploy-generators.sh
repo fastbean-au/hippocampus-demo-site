@@ -4,15 +4,22 @@
 # container, leaving every other service in the combined showcase - Caddy, the consoles, Keycloak,
 # the stores, the landing site - untouched.
 #
-# It covers four services, in two groups:
+# It covers five services, in two groups:
 #
 #   hippocampus-gen-book / hippocampus-gen-logs   the generators (the default selection)
-#   hippocampus-bluesky / hippocampus-bluesky-bridge   the Bluesky demo's service and its bridge
+#   hippocampus-bluesky / hippocampus-bluesky-bridge / hippocampus-bluesky-bridge-worldnews
+#                                                 the Bluesky demo's service and its TWO bridges
 #
-# The Bluesky pair is here because it has exactly the same problem and exactly the same answer: the
-# bridge is that demo's loader AND its load, and the two track `:latest` from the hippocampus repo's
+# The Bluesky group is here because it has exactly the same problem and exactly the same answer: the
+# bridges are that demo's loaders AND its load, and they track `:latest` from the hippocampus repo's
 # releases. They are NOT in the default selection, though - deploying a service is heavier than
 # deploying a generator, so it must be asked for by name.
+#
+# THE TWO BRIDGES ARE NOT INTERCHANGEABLE. `hippocampus-bluesky-bridge` reads the Trending News feed
+# and is the ONLY firehose consumer: it alone reinforces and honours deletes, blind by id, for every
+# memory in the shared store - the WorldNews bridge's included. So while it is down or being
+# recreated, nothing reinforces anything on that console, whereas the WorldNews bridge is a plain feed
+# poller whose absence costs only new WorldNews headlines.
 #
 # WHY THIS EXISTS: these containers track `:latest` from a repo whose CI publishes without touching
 # this host. Nothing here pulls that image on its own: `podman compose up -d` reuses the local copy,
@@ -86,8 +93,9 @@
 #   sudo ./showcase/deploy-generators.sh                # both generators, skipping any already current
 #   sudo ./showcase/deploy-generators.sh book           # just the book generator
 #   sudo ./showcase/deploy-generators.sh --force logs   # recreate even if already on the pulled image
-#   sudo ./showcase/deploy-generators.sh bluesky        # the bluesky service AND its bridge, in that order
-#   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the bridge (a flag change, no new service image)
+#   sudo ./showcase/deploy-generators.sh bluesky        # the bluesky service AND both bridges, in that order
+#   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the Trending News bridge (a flag change, no new service image)
+#   sudo ./showcase/deploy-generators.sh bluesky-bridge-worldnews   # just the WorldNews bridge
 #
 # Override the env file location if it is not the install default:
 #   sudo SHOWCASE_ENV=/path/to/showcase.env ./showcase/deploy-generators.sh
@@ -118,17 +126,26 @@ while [[ $# -gt 0 ]]; do
       SERVICES+=("hippocampus-gen-$1")
       ;;
 
-    # A release updates the service image and the bridge image together, so the bare name selects
-    # both; the full names below select either on its own.
+    # A release updates the service image and the bridge image together, so the bare name selects the
+    # service and both bridges; the names below select any one of them on its own.
     bluesky)
-      SERVICES+=("hippocampus-bluesky" "hippocampus-bluesky-bridge")
+      SERVICES+=(
+        "hippocampus-bluesky"
+        "hippocampus-bluesky-bridge"
+        "hippocampus-bluesky-bridge-worldnews"
+      )
       ;;
 
     bluesky-bridge)
       SERVICES+=("hippocampus-bluesky-bridge")
       ;;
 
-    hippocampus-gen-book | hippocampus-gen-logs | hippocampus-bluesky | hippocampus-bluesky-bridge)
+    bluesky-bridge-worldnews)
+      SERVICES+=("hippocampus-bluesky-bridge-worldnews")
+      ;;
+
+    hippocampus-gen-book | hippocampus-gen-logs | hippocampus-bluesky | \
+      hippocampus-bluesky-bridge | hippocampus-bluesky-bridge-worldnews)
       SERVICES+=("$1")
       ;;
 
@@ -141,7 +158,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-generators: unknown argument '$1' (expected: book, logs, bluesky, bluesky-bridge, --force)" >&2
+      echo "deploy-generators: unknown argument '$1' (expected: book, logs, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force)" >&2
 
       exit 1
       ;;
@@ -152,7 +169,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # The default stays the two generators. Recreating a SERVICE is heavier than recreating its load, so
-# the bluesky pair is only ever deployed when named.
+# the bluesky group is only ever deployed when named.
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
   SERVICES=(hippocampus-gen-book hippocampus-gen-logs)
 fi
@@ -160,7 +177,13 @@ fi
 # Sort the selection into a canonical order, which also dedupes `bluesky bluesky-bridge`. The order is
 # the reason this exists rather than taking argv as given: a bridge recreated before its service dials
 # a socket that is not there and exits (see the header).
-ORDER=(hippocampus-bluesky hippocampus-bluesky-bridge hippocampus-gen-book hippocampus-gen-logs)
+ORDER=(
+  hippocampus-bluesky
+  hippocampus-bluesky-bridge
+  hippocampus-bluesky-bridge-worldnews
+  hippocampus-gen-book
+  hippocampus-gen-logs
+)
 SELECTED=()
 
 for candidate in "${ORDER[@]}"; do
@@ -257,7 +280,7 @@ remove_service() {
 
   if [[ -n "${blockers}" ]]; then
     echo "deploy-generators: it is --require'd by: ${blockers}" >&2
-    echo "deploy-generators: select those in the same run so they are removed first - 'bluesky' takes the pair." >&2
+    echo "deploy-generators: select those in the same run so they are removed first - 'bluesky' takes the whole group." >&2
   fi
 
   return 1
@@ -405,6 +428,11 @@ for service in "${SERVICES[@]}"; do
 
     hippocampus-bluesky-bridge)
       echo "deploy-generators: NOTE - the bridge resumes at the firehose's live tip (that gap is lost) and rebuilds its in-memory indexes from the feed backfill"
+      echo "deploy-generators: NOTE - it is the store's ONLY reinforcement and delete consumer, so nothing on that console is reinforced until it is back"
+      ;;
+
+    hippocampus-bluesky-bridge-worldnews)
+      echo "deploy-generators: NOTE - a feed poller only; it rebuilds its topic-term index from the feed backfill and reinforces nothing either way"
       ;;
 
   esac

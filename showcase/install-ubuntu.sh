@@ -11,9 +11,10 @@
 # The combined stack is fully self-driving: it brings up the landing site, both consoles, the shared
 # Keycloak / Grafana, the data stores, AND the containerised data generators that feed them, so there
 # is nothing else to run. Visitors who sign in to a console are read-only (the realm ships a single
-# demo/demo login); the writing is done by two service accounts - hippocampus-gen for the
-# generators and hippocampus-bluesky-bridge for the Bluesky bridge, which is a separate client so
-# that the bridge is identifiable in the consoles' Deployment tab rather than merged with them.
+# demo/demo login); the writing is done by three service accounts - hippocampus-gen for the
+# generators, and hippocampus-bluesky-bridge / hippocampus-bluesky-bridge-worldnews for the two
+# Bluesky feed bridges, each a separate client so that every writer is identifiable in the consoles'
+# Deployment tab rather than merged into one node.
 #
 # ARCHITECTURE: every image (servers, sidecars, and generators) is published multi-arch, so this runs
 # on both linux/amd64 and linux/arm64 hosts.
@@ -33,8 +34,8 @@
 #                            Required.
 #   --acme-email  <email>    Address Let's Encrypt uses for the ACME account and expiry notices.
 #                            Required.
-#   --gen-secret  <secret>   Secret for the two machine-to-machine clients (hippocampus-gen and
-#                            hippocampus-bluesky-bridge, which share it), substituted into BOTH the
+#   --gen-secret  <secret>   Secret for the three machine-to-machine clients (hippocampus-gen and the
+#                            two hippocampus-bluesky-bridge* clients, which share it), substituted into BOTH the
 #                            generators and the rendered realm so they always match. Matches
 #                            [A-Za-z0-9._~+=/-]+. Optional: omitted, it reuses whatever this host
 #                            already has, and generates a random one on a host that has none (or
@@ -223,11 +224,12 @@ apt-get install -y --no-install-recommends podman podman-compose
 #      redirect_uri"), so the real BASE_DOMAIN is substituted in. The 'admin@example.com' style ACME
 #      default and the realm name 'hippocampus' contain no 'hippocampus.example', so the replace only
 #      touches the redirect URIs (and the demo user's email domain, which is harmless).
-#   2. The machine-to-machine client secret. The generators and the Bluesky bridge authenticate with
+#   2. The machine-to-machine client secret. The generators and both Bluesky bridges authenticate with
 #      GEN_SECRET (passed into the compose file); the realm's client secrets must be the SAME value
-#      or the client-credentials grant fails. Both come from GEN_SECRET here, so they always match -
-#      no second place to edit. The template's secret is only ever a placeholder to substitute; see
-#      resolve_gen_secret above. The two clients deliberately SHARE the secret: they differ by
+#      or the client-credentials grant fails. All come from GEN_SECRET here, so they always match -
+#      no second place to edit (the substitution is global, so a further client using the same
+#      placeholder needs no change here). The template's secret is only ever a placeholder to
+#      substitute; see resolve_gen_secret above. The clients deliberately SHARE the secret: they differ by
 #      client_id (which is what the topology view identifies a caller by) and by role (admin vs
 #      writer), and a second secret in the same env file on the same host would separate nothing.
 #

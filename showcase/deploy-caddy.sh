@@ -66,7 +66,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.showcase-combined.yaml"
 CADDYFILE="${SCRIPT_DIR}/caddy/Caddyfile.combined"
 CADDY_SERVICE="caddy"
-GEN_SERVICES=(hippocampus-gen-book hippocampus-gen-logs hippocampus-bluesky-bridge)
+GEN_SERVICES=(
+  hippocampus-gen-book
+  hippocampus-gen-logs
+  hippocampus-bluesky-bridge
+  hippocampus-bluesky-bridge-worldnews
+)
 
 # Match the systemd unit: load BASE_DOMAIN / ACME_EMAIL / GEN_SECRET so compose interpolation uses the
 # real deployment's values rather than the compose defaults (hippocampus.example) - a hand-run compose
