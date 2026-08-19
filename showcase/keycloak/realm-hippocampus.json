@@ -73,7 +73,7 @@
     {
       "clientId": "hippocampus-bluesky-bridge-worldnews",
       "name": "Hippocampus Bluesky Bridge - WorldNews feed (machine-to-machine)",
-      "description": "Confidential client for the second Bluesky bridge, the one polling the WorldNews feed into the same store: client-credentials grant, writer role. Its own client for the same reason the first bridge has one - the topology view draws a caller under its client_id, so a shared client would collapse the two bridges into one node.",
+      "description": "Confidential client for the second Bluesky bridge, polling the WorldNews feed into the same store: client-credentials grant, writer role. Its own client because the topology view draws a caller under its client_id, so a shared one would merge them.",
       "protocol": "openid-connect",
       "enabled": true,
       "publicClient": false,
