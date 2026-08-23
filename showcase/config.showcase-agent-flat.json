@@ -91,14 +91,5 @@
     "summarisationMinMemories": 0,
     "summarisationMinAgeInDays": 0,
     "summarisationMaxCandidates": 0
-  },
-  "topology": {
-    "components": [
-      {
-        "name": "agent-writer",
-        "kind": "generator",
-        "healthUrl": "http://hippocampus-gen-agent:8090"
-      }
-    ]
   }
 }
