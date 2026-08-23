@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # deploy-servers.sh - pull the current ghcr.io/fastbean-au/hippocampus image and move the SERVER
-# containers (hippocampus-book / hippocampus-logs / hippocampus-bluesky) onto it, then put back
+# containers (hippocampus-book / hippocampus-logs / hippocampus-bluesky / the hippocampus-agent
+# pair) onto it, then put back
 # everything podman made us tear down to get there.
 #
 # WHY THIS EXISTS: nothing on this host ships a new server image on its own. `podman compose up -d`
@@ -129,11 +130,19 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       ;;
 
-    book | logs | bluesky)
+    book | logs | bluesky | agent-flat)
       SERVICES+=("hippocampus-$1")
       ;;
 
-    hippocampus-book | hippocampus-logs | hippocampus-bluesky)
+    # The bare name selects BOTH halves of the agent pair. They are one demonstration - a comparison
+    # between two stores - so deploying one without the other leaves the site showing a comparison
+    # against a store running a different build. Name `agent-flat` explicitly to move just that half.
+    agent)
+      SERVICES+=("hippocampus-agent" "hippocampus-agent-flat")
+      ;;
+
+    hippocampus-book | hippocampus-logs | hippocampus-bluesky | \
+      hippocampus-agent | hippocampus-agent-flat)
       SERVICES+=("$1")
       ;;
 

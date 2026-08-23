@@ -5,7 +5,8 @@
 # grafana. are shared rather than per-stack.
 #
 # Everything derives from one variable, BASE_DOMAIN (default hippocampus.example). Requires public
-# DNS for bluesky.${BASE_DOMAIN}, book.${BASE_DOMAIN}, logs.${BASE_DOMAIN}, auth.${BASE_DOMAIN},
+# DNS for bluesky.${BASE_DOMAIN}, book.${BASE_DOMAIN}, logs.${BASE_DOMAIN}, agent.${BASE_DOMAIN},
+# agent-flat.${BASE_DOMAIN}, auth.${BASE_DOMAIN},
 # grafana.${BASE_DOMAIN},
 # config-builder.${BASE_DOMAIN} (or a
 # *.${BASE_DOMAIN} wildcard) pointing at the host, with 80/443 reachable for the ACME challenge. NB do
@@ -33,6 +34,16 @@ book.{$BASE_DOMAIN:hippocampus.example} {
 
 logs.{$BASE_DOMAIN:hippocampus.example} {
 	reverse_proxy hippocampus-logs:8080
+}
+
+# The agent pair. Two hosts rather than one because they are two stores, and the comparison is made
+# by opening both and searching each for the same thing.
+agent.{$BASE_DOMAIN:hippocampus.example} {
+	reverse_proxy hippocampus-agent:8080
+}
+
+agent-flat.{$BASE_DOMAIN:hippocampus.example} {
+	reverse_proxy hippocampus-agent-flat:8080
 }
 
 auth.{$BASE_DOMAIN:hippocampus.example} {

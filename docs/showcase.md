@@ -411,6 +411,45 @@ natural two: it would suspend forgetting entirely for 24 hours while the retaine
 it would be reached for — each reply recalls the root, resetting its decay clock and adding
 `recallSignificanceWeight` to it.
 
+### The agent pair — one workload, two stores
+
+`agent.${BASE_DOMAIN}` and `agent-flat.${BASE_DOMAIN}` are **one demonstration, not two**. A single
+writer (`hippocampus-gen-agent`) sends byte-for-byte identical memories to both — same ids, bodies,
+events and links, arriving and recalled at the same moments — and the only difference is that the
+flat store is told every memory is equally significant.
+
+That single difference is enough to make it a different algorithm. Every decay method divides
+significance by a function of age, so with a **constant** significance the ordering reduces to pure
+recency: the flat store is an LRU store, arrived at by configuration rather than by a different
+implementation. The two `config.showcase-agent*.json` files are byte-identical apart from their
+OpenSearch index name, so nothing that differs between the consoles comes from the configuration.
+
+**What to do with it:** open both, search each for the same thing, and look for a memory that is old
+but was written as significant. It is present in one and gone from the other. The measured version of
+that comparison, with the cache-replacement baselines it was scored against and its limitations, is
+[Retention quality](https://github.com/fastbean-au/hippocampus/blob/main/docs/retention.md).
+
+**One writer, deliberately.** Two writers would drift — different traces, different arrival times —
+and the comparison depends entirely on the two stores having received exactly the same thing.
+`--flat-address` is the second target.
+
+**The replay speed and the decay clock are coupled.** `--sim-days-per-wall-minute 5` in the compose
+file must match `consolidation.unitsOfAgeInDays` (0.000138888889) in _both_ configs. The writer reads
+the setting back at startup and refuses to run if they disagree, naming the value to use, so a drift
+between them fails loudly rather than quietly measuring a decay rate nobody chose.
+
+> **Adding the pair to an already-running stack needs the databases created by hand.**
+> `showcase/postgres/init-showcase-combined.sql` runs **once, on first boot** of the Postgres
+> container. A cluster that predates this pair will not have `hippocampus_agent` or
+> `hippocampus_agent_flat`, and both services will restart-loop until they exist:
+>
+> ```sh
+> sudo podman exec showcase_postgres_1 psql -U hippocampus -c 'CREATE DATABASE hippocampus_agent'
+> sudo podman exec showcase_postgres_1 psql -U hippocampus -c 'CREATE DATABASE hippocampus_agent_flat'
+> ```
+>
+> New DNS is needed too — `agent.` and `agent-flat.` — or Caddy cannot issue their certificates.
+
 ### Drive it with the generators
 
 The generators ship as published container images —

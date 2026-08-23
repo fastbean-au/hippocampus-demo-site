@@ -7,3 +7,9 @@
 CREATE DATABASE hippocampus_book;
 CREATE DATABASE hippocampus_logs;
 CREATE DATABASE hippocampus_bluesky;
+
+-- The agent pair. Two databases rather than one, because they are two independent stores that must
+-- each take their own advisory lock and must never see each other's rows - the whole point is what
+-- each one INDEPENDENTLY chose to keep from identical input.
+CREATE DATABASE hippocampus_agent;
+CREATE DATABASE hippocampus_agent_flat;

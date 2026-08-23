@@ -192,6 +192,67 @@ services:
       ollama:
         condition: service_healthy
 
+  # ---- agent memory: ONE workload, TWO stores, differing only in whether significance was set -----
+  #
+  # This pair is the demonstration, not two demonstrations. A single writer sends byte-for-byte
+  # identical memories - same ids, bodies, events, links, arriving and recalled at the same moments -
+  # to both, and the ONLY difference is that the flat store is told every memory is equally
+  # significant. With a constant significance the decay ordering reduces to pure recency, since every
+  # method divides significance by a function of age, so the flat store IS an LRU store arrived at by
+  # configuration rather than by a different algorithm.
+  #
+  # The two configs are byte-identical apart from their OpenSearch index name. Everything that
+  # differs between the consoles is a consequence of the input, which is the whole point: search both
+  # for something old and important and it is present in one and gone from the other.
+  #
+  # Measured version of the same comparison, with the baselines and the caveats:
+  # https://github.com/fastbean-au/hippocampus/blob/main/docs/retention.md
+  hippocampus-agent:
+    image: ghcr.io/fastbean-au/hippocampus:latest
+    restart: unless-stopped
+    ports:
+      - "${AGENT_GRPC_PORT:-50054}:50051"
+    volumes:
+      - ./config.showcase-agent.json:/etc/hippocampus/config.json:ro
+    environment:
+      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_agent?sslmode=disable"
+      HIPPOCAMPUS_OPENSEARCH_INDEX: "agent-memories"
+    networks:
+      - data
+      - shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  hippocampus-agent-flat:
+    image: ghcr.io/fastbean-au/hippocampus:latest
+    restart: unless-stopped
+    ports:
+      - "${AGENT_FLAT_GRPC_PORT:-50055}:50051"
+    volumes:
+      - ./config.showcase-agent-flat.json:/etc/hippocampus/config.json:ro
+    environment:
+      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_agent_flat?sslmode=disable"
+      HIPPOCAMPUS_OPENSEARCH_INDEX: "agent-flat-memories"
+    networks:
+      - data
+      - shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
   # ---- logs example: a continuous trickle, reaped by consolidation + capacity eviction -------------
   hippocampus-logs:
     image: ghcr.io/fastbean-au/hippocampus:latest
@@ -297,6 +358,49 @@ services:
 
   # A steady ~120 lines/min trickle at the current time, reaped by consolidation + capacity eviction
   # so the store stays bounded. Storing memories needs the writer role, which admin includes.
+  # ONE writer for BOTH agent stores. Deliberately one rather than two: two writers would drift -
+  # different traces, different arrival times - and the comparison depends on the two stores having
+  # received exactly the same thing. --flat-address is the second target, and the only thing that
+  # differs on the way there is the constant significance.
+  #
+  # --sim-days-per-wall-minute must match consolidation.unitsOfAgeInDays in BOTH configs; the writer
+  # reads the setting back at startup and refuses to run if it disagrees, so a drift between these
+  # two numbers fails loudly instead of quietly measuring a decay rate nobody chose.
+  hippocampus-gen-agent:
+    image: ghcr.io/fastbean-au/hippocampus-gen-agent:latest
+    restart: unless-stopped
+    command:
+      - "--live"
+      - "-s"
+      - "hippocampus-agent:50051"
+      - "--flat-address"
+      - "hippocampus-agent-flat:50051"
+      - "--memories"
+      - "20000"
+      - "--days"
+      - "60"
+      - "--sim-days-per-wall-minute"
+      - "5"
+      - "--workers"
+      - "8"
+      - "--oidc-issuer"
+      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      - "--oidc-client-id"
+      - "hippocampus-gen"
+      - "--oidc-client-secret"
+      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+    networks:
+      - shared
+    depends_on:
+      hippocampus-agent:
+        condition: service_started
+      hippocampus-agent-flat:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
+
   hippocampus-gen-logs:
     image: ghcr.io/fastbean-au/hippocampus-gen-logs:latest
     restart: unless-stopped
