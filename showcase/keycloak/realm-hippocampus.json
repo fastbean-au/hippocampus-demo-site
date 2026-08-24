@@ -42,7 +42,10 @@
         "http://localhost:8080/ui",
         "http://localhost:8081/ui",
         "https://book.hippocampus.example/ui",
-        "https://logs.hippocampus.example/ui"
+        "https://logs.hippocampus.example/ui",
+        "https://agent.hippocampus.example/ui",
+        "https://agent-flat.hippocampus.example/ui",
+        "https://observer.hippocampus.example/ui"
       ],
       "webOrigins": ["+"]
     },
@@ -92,7 +95,11 @@
       "firstName": "Demo",
       "lastName": "Reader",
       "credentials": [
-        { "type": "password", "value": "demo", "temporary": false }
+        {
+          "type": "password",
+          "value": "demo",
+          "temporary": false
+        }
       ],
       "realmRoles": ["reader"]
     },
