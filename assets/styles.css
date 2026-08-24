@@ -401,6 +401,20 @@ code {
   align-self: flex-start;
 }
 
+/* One demonstration spread across two consoles (the agent pair) needs two calls to action.
+   A wrapping flex row with a gap: at the grid's card width the two never actually fit side by side
+   (they want ~407px of ~271px available, and shortening the labels would break the "Open the X
+   console" phrasing every other card uses), so in practice they stack - but with a gap rather than
+   flush, and they would sit in a row if a wider layout ever gave them room. The second is
+   deliberately btn-ghost in the markup: two equal-weight primary buttons made this card read far
+   heavier than its single-button neighbours. */
+.demo-card .demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-self: flex-start;
+}
+
 /* Install cards: prose grows, the command box and doc link sit at the bottom so
    every card in a row lines up. */
 .install-card {
