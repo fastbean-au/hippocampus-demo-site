@@ -122,7 +122,7 @@ while [[ $# -gt 0 ]]; do
       FORCE=1
       ;;
 
-    book | logs | agent)
+    book | logs | agent | observer)
       SERVICES+=("hippocampus-gen-$1")
       ;;
 
@@ -144,7 +144,8 @@ while [[ $# -gt 0 ]]; do
       SERVICES+=("hippocampus-bluesky-bridge-worldnews")
       ;;
 
-    hippocampus-gen-book | hippocampus-gen-logs | hippocampus-gen-agent | hippocampus-bluesky | \
+    hippocampus-gen-book | hippocampus-gen-logs | hippocampus-gen-agent | \
+      hippocampus-gen-observer | hippocampus-bluesky | \
       hippocampus-bluesky-bridge | hippocampus-bluesky-bridge-worldnews)
       SERVICES+=("$1")
       ;;

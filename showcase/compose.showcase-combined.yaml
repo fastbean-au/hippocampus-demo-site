@@ -253,6 +253,41 @@ services:
       keycloak:
         condition: service_started
 
+  # ---- observer: an LLM agent whose only memory is this store ---------------------------------------
+  #
+  # Every other demonstration on this site has its significance chosen by a generator. This one has it
+  # chosen by an agent: it reads what is new in the Bluesky store, recalls what it already concluded
+  # from its own, writes one observation, and rates how much that observation matters. The rating
+  # becomes the significance, so what it judged trivia is gone within a day and what it judged a
+  # landmark is still there in a month.
+  #
+  # It reasons with the LOCAL ollama already on this host, so it costs nothing per cycle and needs no
+  # API key. That is also why it is a small model and the prose is plain - the judgement being asked
+  # for is five bands of importance, which is within a small model's reach in a way that good writing
+  # is not.
+  hippocampus-observer:
+    image: ghcr.io/fastbean-au/hippocampus:latest
+    restart: unless-stopped
+    ports:
+      - "${OBSERVER_GRPC_PORT:-50056}:50051"
+    volumes:
+      - ./config.showcase-observer.json:/etc/hippocampus/config.json:ro
+    environment:
+      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_observer?sslmode=disable"
+      HIPPOCAMPUS_OPENSEARCH_INDEX: "observer-memories"
+    networks:
+      - data
+      - shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
   # ---- logs example: a continuous trickle, reaped by consolidation + capacity eviction -------------
   hippocampus-logs:
     image: ghcr.io/fastbean-au/hippocampus:latest
@@ -396,6 +431,44 @@ services:
         condition: service_started
       hippocampus-agent-flat:
         condition: service_started
+      keycloak:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
+
+  # The agent itself. Reads the Bluesky store, writes to its own, reasons with the local ollama.
+  # --once is not set, so it loops on --interval until stopped.
+  hippocampus-gen-observer:
+    image: ghcr.io/fastbean-au/hippocampus-gen-observer:latest
+    restart: unless-stopped
+    command:
+      - "-s"
+      - "hippocampus-observer:50051"
+      - "--source-address"
+      - "hippocampus-bluesky:50051"
+      - "--ollama-url"
+      - "http://ollama:11434"
+      - "--model"
+      - "${OBSERVER_MODEL:-qwen2.5:3b}"
+      - "--interval"
+      - "2m"
+      - "--group"
+      - "observer"
+      - "--oidc-issuer"
+      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
+      - "--oidc-client-id"
+      - "hippocampus-gen"
+      - "--oidc-client-secret"
+      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+    networks:
+      - shared
+    depends_on:
+      hippocampus-observer:
+        condition: service_started
+      hippocampus-bluesky:
+        condition: service_started
+      ollama:
+        condition: service_healthy
       keycloak:
         condition: service_healthy
       caddy:

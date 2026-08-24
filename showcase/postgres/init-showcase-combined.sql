@@ -13,3 +13,7 @@ CREATE DATABASE hippocampus_bluesky;
 -- each one INDEPENDENTLY chose to keep from identical input.
 CREATE DATABASE hippocampus_agent;
 CREATE DATABASE hippocampus_agent_flat;
+
+-- The observer agent's own store, kept apart from the Bluesky store it reads so its conclusions
+-- never compete with the posts they were formed from for that store's (deliberately tiny) capacity.
+CREATE DATABASE hippocampus_observer;

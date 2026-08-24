@@ -450,6 +450,48 @@ between them fails loudly rather than quietly measuring a decay rate nobody chos
 >
 > New DNS is needed too — `agent.` and `agent-flat.` — or Caddy cannot issue their certificates.
 
+### The observer — an agent that chooses what matters
+
+`observer.${BASE_DOMAIN}` is the only demonstration here whose significance is chosen by an **agent**
+rather than by a generator. Each cycle `hippocampus-gen-observer`:
+
+1. reads what is new in the **Bluesky** store,
+2. **recalls its own prior conclusions** from the observer store (a reinforcing search, so what it
+   keeps returning to decays more slowly),
+3. asks the local model for one observation and how much it matters, on a five-band scale,
+4. stores that observation at a significance derived from the band.
+
+The bands are spread **geometrically** (1,000 / 3,000 / 9,000 / 27,000 / 81,000), because every decay
+method divides significance by a function of age and so compares it as a ratio — evenly spaced
+values would leave the notes the agent judged most important the ones the store could least tell
+apart. With this store's clock that gives:
+
+| The agent judged it | Significance | Gone in about |
+| :------------------ | -----------: | ------------: |
+| trivia              |        1,000 |      10 hours |
+| routine             |        3,000 |      1.2 days |
+| notable             |        9,000 |      3.6 days |
+| significant         |       27,000 |       11 days |
+| landmark            |       81,000 |       32 days |
+
+**It reasons with the local `ollama` already on this host**, so it costs nothing per cycle and needs
+no API key. That is also why the prose is plain: the judgement being asked for is five bands of
+importance, which is within a small model's reach in a way that good writing is not. `OBSERVER_MODEL`
+selects the model, and it must be pulled on the host first:
+
+```sh
+sudo podman exec showcase_ollama_1 ollama pull qwen2.5:3b
+```
+
+**Its own store, not the Bluesky one.** The Bluesky store is capped at 1,600 memories on measured
+figures; agent notes written into it would displace the posts that demo is about. Keeping them apart
+also means the observer's conclusions decay on their own terms rather than the feed's.
+
+**The reply is treated as a suggestion, not a contract.** A small model asked for a fixed shape will
+sometimes not produce it, so the parser accepts reordered fields, markdown decoration and leading
+chatter, and falls back to the middle band when no rating is given. An empty note is the one
+unrecoverable case.
+
 ### Drive it with the generators
 
 The generators ship as published container images —
