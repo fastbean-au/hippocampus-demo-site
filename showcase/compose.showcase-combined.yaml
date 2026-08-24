@@ -461,6 +461,10 @@ services:
       - "--oidc-client-secret"
       - "${GEN_SECRET:-showcase-gen-secret-change-me}"
     networks:
+      # BOTH networks: shared reaches the two hippocampus services and the issuer through Caddy,
+      # data reaches ollama - which is on data only, like every other backing service. On shared
+      # alone the agent starts, reads, and then fails every cycle on "lookup ollama: no such host".
+      - data
       - shared
     depends_on:
       hippocampus-observer:
