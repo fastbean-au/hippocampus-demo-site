@@ -278,6 +278,13 @@ services:
   # 1.5b rather than 0.5b because 0.5b does not reliably follow the reply format or the
   # "do not repeat what you already noted" instruction; rather than 3b because 3b is what made the
   # host unaffordable. Keep this in step with ollama.model in config.showcase-bluesky.json.
+  #
+  # THE INTERVAL AND TIMEOUT ARE SET BY THE SHARING, NOT BY THIS AGENT. ollama serialises requests
+  # per model, and the bluesky auto-summariser - now on the same model - generates from up to forty
+  # memories at a time, seventeen times in twenty minutes. A two-minute interval with a ninety-second
+  # timeout put this agent in that queue and it timed out on EVERY cycle: sharing bought a great deal
+  # of memory and cost latency, which is a trade worth making and not one worth ignoring. Ten minutes
+  # collides far less often, and five minutes of patience is enough to wait out a summarisation.
   hippocampus-observer:
     image: ghcr.io/fastbean-au/hippocampus:latest
     restart: unless-stopped
@@ -464,7 +471,9 @@ services:
       - "--model"
       - "${OBSERVER_MODEL:-qwen2.5:1.5b}"
       - "--interval"
-      - "2m"
+      - "10m"
+      - "--model-timeout"
+      - "300s"
       - "--group"
       - "observer"
       - "--oidc-issuer"

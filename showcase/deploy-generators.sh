@@ -184,6 +184,8 @@ ORDER=(
   hippocampus-bluesky-bridge-worldnews
   hippocampus-gen-book
   hippocampus-gen-logs
+  hippocampus-gen-agent
+  hippocampus-gen-observer
 )
 SELECTED=()
 
@@ -192,6 +194,16 @@ for candidate in "${ORDER[@]}"; do
     *" ${candidate} "*) SELECTED+=("${candidate}") ;;
   esac
 done
+
+# Anything the loop above did not match is silently gone, and a service missing from ORDER looks
+# exactly like a successful no-op run ("nothing to do"). That is how the agent and observer
+# generators were unshippable for a day: they were added to the argument parsing and not here. Fail
+# loudly instead - a selection that empties itself is a bug in this script, never a valid request.
+if [[ ${#SERVICES[@]} -gt 0 && ${#SELECTED[@]} -eq 0 ]]; then
+  echo "deploy-generators: ERROR - none of '${SERVICES[*]}' appear in ORDER; add them there" >&2
+
+  exit 1
+fi
 
 SERVICES=("${SELECTED[@]}")
 
