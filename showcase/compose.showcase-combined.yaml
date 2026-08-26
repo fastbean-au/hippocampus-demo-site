@@ -677,12 +677,18 @@ services:
   # against 768, which matters on a box already running Postgres, OpenSearch, Keycloak, Grafana, two
   # Hippocampus services and two generators. Prefer nomic-embed-text for a real deployment.
   #
-  # It also holds a small GENERATION model for the bluesky service's auto-summarisation. That one is
-  # off the write path - it runs inside the sleep cycle, best-effort - so it is sized purely for how
-  # much of this box's CPU one summary may cost: qwen2.5:0.5b (~400 MB) rather than the config
-  # default llama3.2 (~2 GB). Prefer something larger in a real deployment; override with
-  # SUMMARY_MODEL, which needs no reindex (unlike EMBEDDING_MODEL, whose width is fixed at k-NN
-  # index creation).
+  # It also holds ONE generation model, SHARED by the bluesky service's auto-summarisation and the
+  # observer agent. Shared because ollama keeps a model resident for five minutes after use and both
+  # fire more often than that, so two different models meant two permanently resident copies - which
+  # on this box cost about 12 GB and 60% of its CPU. Sized for how much of that CPU one generation
+  # may cost: qwen2.5:1.5b (~1 GB) rather than the config default llama3.2 (~2 GB) or the 3b that
+  # made the box unaffordable. Override with SUMMARY_MODEL, which needs no reindex (unlike
+  # EMBEDDING_MODEL, whose width is fixed at k-NN index creation).
+  #
+  # SUMMARY_MODEL, ollama.model in config.showcase-bluesky.json, and OBSERVER_MODEL must all name the
+  # SAME model. This pull and the healthcheck below are what put it on the host at all, so a mismatch
+  # means the odd one out asks for a model that is not there - and /api/generate does not pull on
+  # demand, it fails.
   #
   # The image ships no model, so the entrypoint starts the server, pulls both models, then hands the
   # process back. The healthcheck gates on the MODELS being present rather than the port being open,
@@ -698,7 +704,7 @@ services:
         server=$$!
         until ollama list >/dev/null 2>&1; do sleep 1; done
         ollama pull ${EMBEDDING_MODEL:-all-minilm}
-        ollama pull ${SUMMARY_MODEL:-qwen2.5:0.5b}
+        ollama pull ${SUMMARY_MODEL:-qwen2.5:1.5b}
         wait $$server
     volumes:
       - combined-ollama-data:/root/.ollama
@@ -708,7 +714,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "ollama list | grep -q ${EMBEDDING_MODEL:-all-minilm} && ollama list | grep -q ${SUMMARY_MODEL:-qwen2.5:0.5b}",
+          "ollama list | grep -q ${EMBEDDING_MODEL:-all-minilm} && ollama list | grep -q ${SUMMARY_MODEL:-qwen2.5:1.5b}",
         ]
       interval: 10s
       timeout: 5s
