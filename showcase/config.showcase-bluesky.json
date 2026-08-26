@@ -62,8 +62,8 @@
     "enabled": true,
     "autoSummarise": true,
     "address": "http://ollama:11434",
-    "model": "qwen2.5:0.5b",
-    "timeoutSeconds": 45,
+    "model": "qwen2.5:1.5b",
+    "timeoutSeconds": 120,
     "maxMemories": 40,
     "promptCharLimit": 6000,
     "temperature": 0.2

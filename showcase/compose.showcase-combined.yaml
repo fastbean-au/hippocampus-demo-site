@@ -265,6 +265,19 @@ services:
   # API key. That is also why it is a small model and the prose is plain - the judgement being asked
   # for is five bands of importance, which is within a small model's reach in a way that good writing
   # is not.
+  #
+  # THE MODEL IS SHARED WITH THE BLUESKY DEMO'S AUTO-SUMMARISER, DELIBERATELY. ollama keeps a model
+  # resident for five minutes after use, and both of these fire more often than that, so two
+  # different generative models meant two permanently resident copies. On a four-core box that was
+  # not affordable: with a 3b here and a 0.5b there, ollama held three models (the third being
+  # book's all-minilm embeddings, which is a different KIND of model and cannot be shared - its 384
+  # dimensions are baked into the OpenSearch k-NN index), ~12 GB resident, and about 60% of the
+  # host's CPU. Generations then ran so slowly that this agent timed out and retried, which made it
+  # worse again. One shared generative model plus the embedding model is two, not three.
+  #
+  # 1.5b rather than 0.5b because 0.5b does not reliably follow the reply format or the
+  # "do not repeat what you already noted" instruction; rather than 3b because 3b is what made the
+  # host unaffordable. Keep this in step with ollama.model in config.showcase-bluesky.json.
   hippocampus-observer:
     image: ghcr.io/fastbean-au/hippocampus:latest
     restart: unless-stopped
@@ -449,7 +462,7 @@ services:
       - "--ollama-url"
       - "http://ollama:11434"
       - "--model"
-      - "${OBSERVER_MODEL:-qwen2.5:3b}"
+      - "${OBSERVER_MODEL:-qwen2.5:1.5b}"
       - "--interval"
       - "2m"
       - "--group"

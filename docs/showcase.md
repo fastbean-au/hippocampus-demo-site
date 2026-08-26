@@ -480,8 +480,21 @@ importance, which is within a small model's reach in a way that good writing is 
 selects the model, and it must be pulled on the host first:
 
 ```sh
-sudo podman exec showcase_ollama_1 ollama pull qwen2.5:3b
+sudo podman exec showcase_ollama_1 ollama pull qwen2.5:1.5b
 ```
+
+> **The generative model is shared with the Bluesky demo's auto-summariser, and should stay shared.**
+> `ollama` keeps a model resident for five minutes after use and both fire more often than that, so
+> two _different_ generative models meant two permanently resident copies. Running a 3b here and a
+> 0.5b there put three models in memory (the third being book's `all-minilm` embeddings, a different
+> KIND of model that cannot be shared — its 384 dimensions are baked into the OpenSearch k-NN index),
+> about 12 GB resident and roughly 60% of a four-core host's CPU. Generations then ran slowly enough
+> that this agent hit its timeout and retried, which made it worse again.
+>
+> One shared generative model plus the embedding model is **two** resident models, not three. Keep
+> `OBSERVER_MODEL` and `ollama.model` in `config.showcase-bluesky.json` in step; 1.5b is the chosen
+> size because 0.5b does not reliably follow the reply format or the "do not repeat" instruction, and
+> 3b is what made the host unaffordable.
 
 **Its own store, not the Bluesky one.** The Bluesky store is capped at 1,600 memories on measured
 figures; agent notes written into it would displace the posts that demo is about. Keeping them apart
