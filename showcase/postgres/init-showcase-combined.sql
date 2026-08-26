@@ -5,7 +5,6 @@
 -- database-scoped advisory lock (see db/postgres.go — the lock key is fixed, but Postgres advisory
 -- locks are scoped to the current database, so two databases do not collide).
 CREATE DATABASE hippocampus_book;
-CREATE DATABASE hippocampus_logs;
 CREATE DATABASE hippocampus_bluesky;
 
 -- The agent pair. Two databases rather than one, because they are two independent stores that must

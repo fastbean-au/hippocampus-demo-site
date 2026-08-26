@@ -548,17 +548,25 @@ BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
   podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 ```
 
-That serves five subdomains of the one domain — point A/AAAA records for each (or a single
+That serves eight subdomains of the one domain — point A/AAAA records for each (or a single
 `*.${BASE_DOMAIN}` wildcard) at the host:
 
 | Subdomain                       | Serves                                                       |
 | ------------------------------- | ------------------------------------------------------------ |
 | `bluesky.${BASE_DOMAIN}`        | the Bluesky console (`/ui`), gRPC on `:50053`                |
 | `book.${BASE_DOMAIN}`           | the book console (`/ui`), gRPC on `:50051`                   |
-| `logs.${BASE_DOMAIN}`           | the logs console (`/ui`), gRPC on `:50052`                   |
+| `agent.${BASE_DOMAIN}`          | the agent console (`/ui`), gRPC on `:50054`                  |
+| `agent-flat.${BASE_DOMAIN}`     | its flat-significance twin (`/ui`), gRPC on `:50055`         |
+| `observer.${BASE_DOMAIN}`       | the observer console (`/ui`), gRPC on `:50056`               |
 | `auth.${BASE_DOMAIN}`           | Keycloak — **shared**, one realm serving every console       |
 | `grafana.${BASE_DOMAIN}`        | Grafana — **shared**, every service's telemetry in one place |
 | `config-builder.${BASE_DOMAIN}` | the configuration and deployment wizard (see below)          |
+
+> **The logs demonstration was retired from this combined stack** once the agent pair began showing
+> the same thing — significance deciding what survives — with a _control_ to compare against, which
+> the logs stream never had. It remains available as a stack of its own
+> ([`compose.showcase-logs.yaml`](../showcase/compose.showcase-logs.yaml)), and the `logs` generator
+> is unchanged; only the hosted console is gone.
 
 Each of those is a whole application with its own navigation, so the landing page opens them in a new
 tab and the visitor's original tab stays on the site. Grafana additionally carries its own way back:

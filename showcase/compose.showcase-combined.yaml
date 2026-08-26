@@ -94,7 +94,6 @@ services:
     # site with no full-stack bounce. See docs/showcase.md "Updating a running deployment".
     depends_on:
       - hippocampus-book
-      - hippocampus-logs
       - keycloak
       - otel-lgtm
     # Readiness signal for the data generators: report healthy only once the OIDC issuer actually
@@ -307,36 +306,6 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
-
-  # ---- logs example: a continuous trickle, reaped by consolidation + capacity eviction -------------
-  hippocampus-logs:
-    image: ghcr.io/fastbean-au/hippocampus:latest
-    restart: unless-stopped
-    ports:
-      - "${LOGS_GRPC_PORT:-50052}:50051"
-    volumes:
-      - ./config.showcase-logs.json:/etc/hippocampus/config.json:ro
-    environment:
-      HIPPOCAMPUS_AUTH_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
-      HIPPOCAMPUS_AUTH_UI_ISSUER: "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
-      # Co-tenant overrides: own database in the shared Postgres, own index in the shared OpenSearch.
-      HIPPOCAMPUS_STORAGE_POSTGRES_DSN: "postgres://hippocampus:hippocampus@postgres:5432/hippocampus_logs?sslmode=disable"
-      HIPPOCAMPUS_OPENSEARCH_INDEX: "logs-memories"
-    networks:
-      - data
-      - shared
-    depends_on:
-      postgres:
-        condition: service_healthy
-      opensearch:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-
-  # The Bluesky demo. Posts come from a CURATED FEED (verified news organisations, read over HTTP),
-  # while the likes and reposts that reinforce them arrive on the public firehose - so the store is
-  # shaped by real attention rather than by a generator. It needs no generator container for that
-  # reason: the bridge below is both the loader and the load.
   hippocampus-bluesky:
     image: ghcr.io/fastbean-au/hippocampus:latest
     restart: unless-stopped
@@ -499,45 +468,6 @@ services:
         condition: service_healthy
       caddy:
         condition: service_healthy
-
-  hippocampus-gen-logs:
-    image: ghcr.io/fastbean-au/hippocampus-gen-logs:latest
-    restart: unless-stopped
-    command:
-      - "-s"
-      - "hippocampus-logs:50051"
-      - "--live"
-      - "--rate"
-      - "120"
-      - "--oidc-issuer"
-      - "https://auth.${BASE_DOMAIN:-hippocampus.example}/realms/hippocampus"
-      - "--oidc-client-id"
-      - "hippocampus-gen"
-      - "--oidc-client-secret"
-      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
-    networks:
-      - shared
-    depends_on:
-      hippocampus-logs:
-        condition: service_started
-      keycloak:
-        condition: service_healthy
-      # Intent: do not start until the issuer actually serves through Caddy, not just until Keycloak
-      # is internally healthy. podman-compose 1.0.6 IGNORES these health conditions on `up -d` (kept
-      # for correctness / a compose that honours them); the operative gate is the unit's ExecStartPost
-      # (showcase/start-generators.sh), which waits for the caddy healthcheck and then starts these.
-      caddy:
-        condition: service_healthy
-
-  # The Bluesky bridge: loader and load in one. It reads a curated news feed over HTTP for the posts
-  # and the public Jetstream firehose for the engagement, and it is the only "generator" here that
-  # authenticates with the OIDC CLIENT-CREDENTIALS grant rather than a static token - a long-running
-  # bridge carrying a token that expires does not stop, it keeps consuming and fails every write
-  # silently, so it mints and refreshes its own.
-  #
-  # --topic-links relates posts that share topic terms (taken from the article URL's slug, which is a
-  # keyword list someone wrote by hand). That is what gives the service's linkRecallPropagation
-  # something to propagate along: a like on one outlet's coverage pulls the others back too.
   hippocampus-bluesky-bridge:
     image: ghcr.io/fastbean-au/hippocampus-bluesky-bridge:latest
     restart: unless-stopped

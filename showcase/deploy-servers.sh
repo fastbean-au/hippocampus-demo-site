@@ -130,7 +130,7 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       ;;
 
-    book | logs | bluesky | agent-flat | observer)
+    book | bluesky | agent-flat | observer)
       SERVICES+=("hippocampus-$1")
       ;;
 
@@ -141,7 +141,7 @@ while [[ $# -gt 0 ]]; do
       SERVICES+=("hippocampus-agent" "hippocampus-agent-flat")
       ;;
 
-    hippocampus-book | hippocampus-logs | hippocampus-bluesky | \
+    hippocampus-book | hippocampus-bluesky | \
       hippocampus-agent | hippocampus-agent-flat | hippocampus-observer)
       SERVICES+=("$1")
       ;;
