@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # deploy-servers.sh - pull the current ghcr.io/fastbean-au/hippocampus image and move the SERVER
-# containers (hippocampus-book / hippocampus-logs / hippocampus-bluesky / the hippocampus-agent
+# containers (hippocampus-book / hippocampus-bluesky / hippocampus-observer / the hippocampus-agent
 # pair) onto it, then put back
 # everything podman made us tear down to get there.
 #
@@ -16,22 +16,36 @@
 # edge, and podman refuses to remove a container while something requires it. For the servers those
 # edges run:
 #
-#   caddy                     --requires-->  hippocampus-book, hippocampus-logs
-#   hippocampus-gen-book      --requires-->  caddy, hippocampus-book, hippocampus-logs
-#   hippocampus-gen-logs      --requires-->  caddy, hippocampus-book, hippocampus-logs
-#   hippocampus-bluesky-bridge--requires-->  caddy, hippocampus-book, hippocampus-logs, hippocampus-bluesky
+#   caddy                     --requires-->  hippocampus-book
+#   hippocampus-gen-book      --requires-->  caddy, hippocampus-book
+#   hippocampus-gen-agent     --requires-->  caddy, hippocampus-agent, hippocampus-agent-flat
+#   hippocampus-gen-observer  --requires-->  caddy, hippocampus-observer, hippocampus-bluesky
+#   hippocampus-bluesky-bridge--requires-->  caddy, hippocampus-bluesky
 #   hippocampus-bluesky-bridge-worldnews
-#                             --requires-->  caddy, hippocampus-book, hippocampus-logs, hippocampus-bluesky
+#                             --requires-->  caddy, hippocampus-bluesky
 #
-# So touching book OR logs means removing the two generators, BOTH bluesky bridges and CADDY first - there is no
-# cheaper partial, because caddy and both generators require BOTH servers. Removal runs in reverse
-# creation order and every name is freed before anything is recreated; bring-up runs forwards.
+# BOOK IS THE EXPENSIVE ONE, and it is expensive alone: caddy requires it, and every generator and
+# both bridges require caddy, so touching book tears down the entire front of the stack. Removal runs
+# in reverse creation order and every name is freed before anything is recreated; bring-up runs
+# forwards.
 #
-# BLUESKY IS THE CHEAP CASE. hippocampus-bluesky is required only by its two bridges - not by caddy,
-# not by the generators - so `deploy-servers.sh bluesky` recreates exactly three containers, keeps the
-# apex up and touches no store. Prefer it when a release only needs proving on one service.
+# EVERYTHING ELSE IS CHEAP, because nothing but a generator or a bridge requires it and caddy is not
+# in the way:
 #
-# TWO COSTS ARE UNAVOIDABLE once book or logs is in the selection, and the script states both before
+#   agent      -> the two agent servers + hippocampus-gen-agent          (3 containers)
+#   observer   -> hippocampus-observer + hippocampus-gen-observer        (2 containers)
+#   bluesky    -> hippocampus-bluesky + gen-observer + both bridges      (4 containers)
+#
+# All three keep the apex up and touch no store. Prefer them when a release only needs proving on one
+# service. Note that gen-observer requires bluesky as well as observer, so the two overlap - naming
+# both costs no more than naming either.
+#
+# THIS LIST IS NOT WHAT THE SCRIPT ACTS ON. The set it touches is discovered from podman's live
+# --requires edges at run time; the ORDER array below only fixes the sequence, and discovery fails
+# loudly if it turns up a container ORDER does not name. That is what caught the logs services
+# staying here after the compose file dropped them - the bare, no-argument form could not run at all.
+#
+# TWO COSTS ARE UNAVOIDABLE once book is in the selection, and the script states both before
 # it touches anything:
 #
 #   1. THE BOOK STORE IS WIPED. hippocampus-gen-book has to be recreated because it requires the
@@ -87,9 +101,10 @@
 # read-only bind mount. What the book store loses, it loses to the generator's --reset above.
 #
 # Run as root - the showcase containers live under root podman:
-#   sudo ./showcase/deploy-servers.sh                 # all three servers, skipping any already current
-#   sudo ./showcase/deploy-servers.sh bluesky         # just bluesky + its two bridges; apex stays up, no wipe
-#   sudo ./showcase/deploy-servers.sh book logs       # the pair that costs the apex and the book store
+#   sudo ./showcase/deploy-servers.sh                 # all five servers, skipping any already current
+#   sudo ./showcase/deploy-servers.sh agent           # both agent halves + their generator; apex stays up, no wipe
+#   sudo ./showcase/deploy-servers.sh bluesky         # bluesky + gen-observer + both bridges; apex stays up
+#   sudo ./showcase/deploy-servers.sh book            # the one that costs the apex and the book store
 #   sudo ./showcase/deploy-servers.sh --yes           # non-interactive; required when there is no TTY
 #   sudo ./showcase/deploy-servers.sh --force bluesky # recreate even if already on the pulled image
 #   sudo ./showcase/deploy-servers.sh --dry-run       # print the plan and the blast radius, change nothing
@@ -155,7 +170,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-servers: unknown argument '$1' (expected: book, logs, bluesky, --force, --yes, --dry-run)" >&2
+      echo "deploy-servers: unknown argument '$1' (expected: book, agent, agent-flat, observer, bluesky, --force, --yes, --dry-run)" >&2
 
       exit 1
       ;;
@@ -166,7 +181,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(hippocampus-book hippocampus-logs hippocampus-bluesky)
+  SERVICES=(hippocampus-book hippocampus-agent hippocampus-agent-flat hippocampus-observer hippocampus-bluesky)
 fi
 
 # Every container this script may touch, in CREATION order: a container appears after everything it
@@ -175,11 +190,14 @@ fi
 # discovery fails loudly if it ever turns up something that is not named here.
 ORDER=(
   hippocampus-book
-  hippocampus-logs
+  hippocampus-agent
+  hippocampus-agent-flat
+  hippocampus-observer
   hippocampus-bluesky
   caddy
   hippocampus-gen-book
-  hippocampus-gen-logs
+  hippocampus-gen-agent
+  hippocampus-gen-observer
   hippocampus-bluesky-bridge
   hippocampus-bluesky-bridge-worldnews
 )
