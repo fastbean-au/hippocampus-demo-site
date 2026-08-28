@@ -90,9 +90,9 @@
 # is what "a stream of the present, not a ledger" means.
 #
 # Run as root - the showcase containers live under root podman:
-#   sudo ./showcase/deploy-generators.sh                # both generators, skipping any already current
+#   sudo ./showcase/deploy-generators.sh                # all three generators, skipping any already current
 #   sudo ./showcase/deploy-generators.sh book           # just the book generator
-#   sudo ./showcase/deploy-generators.sh --force logs   # recreate even if already on the pulled image
+#   sudo ./showcase/deploy-generators.sh --force book   # recreate even if already on the pulled image
 #   sudo ./showcase/deploy-generators.sh bluesky        # the bluesky service AND both bridges, in that order
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the Trending News bridge (a flag change, no new service image)
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge-worldnews   # just the WorldNews bridge
@@ -159,7 +159,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-generators: unknown argument '$1' (expected: book, logs, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force)" >&2
+      echo "deploy-generators: unknown argument '$1' (expected: book, agent, observer, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force)" >&2
 
       exit 1
       ;;
@@ -169,10 +169,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# The default stays the two generators. Recreating a SERVICE is heavier than recreating its load, so
+# The default is the three generators. Recreating a SERVICE is heavier than recreating its load, so
 # the bluesky group is only ever deployed when named.
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(hippocampus-gen-book hippocampus-gen-logs)
+  SERVICES=(hippocampus-gen-book hippocampus-gen-agent hippocampus-gen-observer)
 fi
 
 # Sort the selection into a canonical order, which also dedupes `bluesky bluesky-bridge`. The order is
