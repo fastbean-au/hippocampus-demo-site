@@ -34,13 +34,25 @@
 #                            Required.
 #   --acme-email  <email>    Address Let's Encrypt uses for the ACME account and expiry notices.
 #                            Required.
-#   --gen-secret  <secret>   Secret for the three machine-to-machine clients (hippocampus-gen and the
-#                            two hippocampus-bluesky-bridge* clients, which share it), substituted into BOTH the
-#                            generators and the rendered realm so they always match. Matches
-#                            [A-Za-z0-9._~+=/-]+. Optional: omitted, it reuses whatever this host
-#                            already has, and generates a random one on a host that has none (or
-#                            that still carries the placeholder from the tracked template). It is
-#                            never printed - read it back from the env file if you need it.
+#   --gen-secret  <secret>   Secret for the hippocampus-gen client, which the three generators share.
+#                            Substituted into BOTH the compose file and the rendered realm so the two
+#                            always match. Matches [A-Za-z0-9._~+=/-]+. Optional: omitted, it reuses
+#                            whatever this host already has, and generates a random one on a host
+#                            that has none (or that still carries the placeholder from the tracked
+#                            template). Never printed - read it back from the env file if you need it.
+#
+#                            The two Bluesky bridges have their OWN secrets, generated the same way
+#                            and recorded as BLUESKY_BRIDGE_SECRET and
+#                            BLUESKY_BRIDGE_WORLDNEWS_SECRET. There is no flag for either: they exist
+#                            so that a leak is bounded to one client, and a value passed on a command
+#                            line is how the last one escaped.
+#   --rotate-secrets         Replace ALL THREE machine-to-machine secrets with fresh random values
+#                            instead of reusing what the host has. This is the only way to retire a
+#                            secret that still works - every other path here preserves it - so it is
+#                            what to run after one has leaked. It re-renders the realm, which means
+#                            Keycloak is re-imported and the whole stack is restarted; the three
+#                            generators and both bridges cannot authenticate until they are recreated
+#                            on the new values, which the restart does.
 #   -h, --help               Show this help and exit.
 #
 set -euo pipefail
@@ -53,14 +65,27 @@ COMPOSE_FILE="showcase/compose.showcase-combined.yaml"
 # Records the sha256 of the realm JSON currently imported into Keycloak, so a re-run can tell whether
 # the rendered realm actually changed (domain, gen secret, or a template edit) and needs re-importing.
 IMPORTED_REALM_HASH_FILE="${ENV_DIR}/realm-imported.sha256"
-# The secret the tracked realm template carries. It is a PLACEHOLDER, never a usable secret: the
-# render below substitutes it, and resolve_gen_secret treats a host still carrying it as a host with
-# no secret at all. Defined here rather than beside the render because both need it.
-REALM_PLACEHOLDER_SECRET="showcase-gen-secret-change-me"
+# The secrets the tracked realm template carries, one per machine-to-machine client. Each is a
+# PLACEHOLDER, never a usable secret: the render below substitutes it, and resolve_secret treats a
+# host still carrying one as a host with no secret at all. Defined here rather than beside the render
+# because both need them.
+#
+# One per client rather than one shared value. They did share, on the argument that clients differing
+# only by id and role gain nothing from separate secrets when both live in the same env file on the
+# same host. That argument holds against host compromise and fails against the way a secret actually
+# escaped: a bridge's secret is a COMMAND-LINE ARGUMENT, so it appears in `podman inspect`, in the
+# deploy scripts' own output, and in any log that captured one. A shared value turns one container's
+# argv into every client's credential, and the blast radius of a leak is what separate secrets buy.
+REALM_PLACEHOLDER_GEN_SECRET="showcase-gen-secret-change-me"
+REALM_PLACEHOLDER_BRIDGE_SECRET="showcase-bluesky-bridge-secret-change-me"
+REALM_PLACEHOLDER_WORLDNEWS_SECRET="showcase-bluesky-bridge-worldnews-secret-change-me"
 
 BASE_DOMAIN=""
 ACME_EMAIL=""
 GEN_SECRET=""
+BLUESKY_BRIDGE_SECRET=""
+BLUESKY_BRIDGE_WORLDNEWS_SECRET=""
+ROTATE_SECRETS=0
 
 die() {
   echo "ERROR: $*" >&2
@@ -69,8 +94,11 @@ die() {
 }
 
 usage() {
-  # Print the leading comment block (the lines between the shebang and `set -euo pipefail`) as help.
-  sed -n '3,36p' "$0" | sed 's/^# \{0,1\}//'
+  # Print the leading comment block (the lines between the shebang and `set -euo pipefail`) as help,
+  # stopping at the first line that is not a comment. A fixed line range was used here and had
+  # silently truncated mid-option since the block last grew - so --gen-secret and --help were both
+  # documented and unprintable. This cannot drift.
+  awk 'NR > 2 { if (!/^#/) exit; print }' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # Resolve THIS stack's Keycloak volume, so a reset never touches an unrelated one (a host can carry
@@ -134,6 +162,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
 
+    --rotate-secrets)
+      ROTATE_SECRETS=1
+      shift
+      ;;
+
     -h | --help)
       usage
 
@@ -170,38 +203,55 @@ done
 # idiom leaves tr writing into a closed pipe, and under `set -o pipefail` that SIGPIPE becomes the
 # assignment's exit status and aborts the install - intermittently, which is the worst way to find
 # out.
-resolve_gen_secret() {
-  local existing=""
+# resolve_secret VARNAME ENV_KEY PLACEHOLDER - reuse the value already recorded in the env file, or
+# mint a fresh one. The value is assigned to VARNAME by name and never printed.
+#
+# --rotate-secrets skips the reuse arm, which is the only way to replace a secret that is still
+# working: every other path here deliberately preserves what a host already has, so a plain re-run
+# after a leak would carry the leaked value straight back into the rendered realm.
+resolve_secret() {
+  local varname="$1" key="$2" placeholder="$3"
+  local existing="" value=""
 
-  if [[ -f "${ENV_FILE}" ]]; then
-    existing="$(sed -n 's/^GEN_SECRET=//p' "${ENV_FILE}" | tail -n 1)"
+  if [[ -f "${ENV_FILE}" && "${ROTATE_SECRETS}" -eq 0 ]]; then
+    existing="$(sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1)"
   fi
 
-  if [[ -n "${existing}" && "${existing}" != "${REALM_PLACEHOLDER_SECRET}" ]]; then
-    GEN_SECRET="${existing}"
+  if [[ -n "${existing}" && "${existing}" != "${placeholder}" ]]; then
+    printf -v "${varname}" '%s' "${existing}"
 
-    echo "==> Reusing the gen secret already recorded in ${ENV_FILE}"
+    echo "==> Reusing the ${key} already recorded in ${ENV_FILE}"
 
     return 0
   fi
 
-  GEN_SECRET="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+  value="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
 
-  [[ ${#GEN_SECRET} -eq 48 ]] || die "failed to generate a gen secret from /dev/urandom."
+  [[ ${#value} -eq 48 ]] || die "failed to generate ${key} from /dev/urandom."
 
-  echo "==> Generated a new gen secret; it is recorded in ${ENV_FILE} and is not printed here"
+  printf -v "${varname}" '%s' "${value}"
+
+  echo "==> Generated a new ${key}; it is recorded in ${ENV_FILE} and is not printed here"
 
   return 0
 }
 
-[[ -n "$GEN_SECRET" ]] || resolve_gen_secret
+[[ -n "$GEN_SECRET" ]] || resolve_secret GEN_SECRET GEN_SECRET "${REALM_PLACEHOLDER_GEN_SECRET}"
+[[ -n "$BLUESKY_BRIDGE_SECRET" ]] ||
+  resolve_secret BLUESKY_BRIDGE_SECRET BLUESKY_BRIDGE_SECRET "${REALM_PLACEHOLDER_BRIDGE_SECRET}"
+[[ -n "$BLUESKY_BRIDGE_WORLDNEWS_SECRET" ]] ||
+  resolve_secret BLUESKY_BRIDGE_WORLDNEWS_SECRET BLUESKY_BRIDGE_WORLDNEWS_SECRET \
+    "${REALM_PLACEHOLDER_WORLDNEWS_SECRET}"
 
 # The gen secret is substituted verbatim into the rendered realm JSON (below), so constrain it to
 # characters that are safe both as a sed replacement and inside a JSON string - no quotes, backslash,
 # ampersand, pipe, or whitespace. This keeps the render simple and total; loosen it only alongside a
 # JSON-aware injector. Both a reused and a generated secret satisfy it.
-[[ "$GEN_SECRET" =~ ^[A-Za-z0-9._~+=/-]+$ ]] ||
-  die "--gen-secret must match [A-Za-z0-9._~+=/-]+ (it is injected into the realm JSON)."
+for _secret_name in GEN_SECRET BLUESKY_BRIDGE_SECRET BLUESKY_BRIDGE_WORLDNEWS_SECRET; do
+  [[ "${!_secret_name}" =~ ^[A-Za-z0-9._~+=/-]+$ ]] ||
+    die "${_secret_name} must match [A-Za-z0-9._~+=/-]+ (it is injected into the realm JSON)."
+done
+unset _secret_name
 
 # Resolve the repository root from this script's location (showcase/install-ubuntu.sh -> repo root),
 # so the systemd unit gets an absolute WorkingDirectory and the compose build context resolves.
@@ -224,14 +274,20 @@ apt-get install -y --no-install-recommends podman podman-compose
 #      redirect_uri"), so the real BASE_DOMAIN is substituted in. The 'admin@example.com' style ACME
 #      default and the realm name 'hippocampus' contain no 'hippocampus.example', so the replace only
 #      touches the redirect URIs (and the demo user's email domain, which is harmless).
-#   2. The machine-to-machine client secret. The generators and both Bluesky bridges authenticate with
-#      GEN_SECRET (passed into the compose file); the realm's client secrets must be the SAME value
-#      or the client-credentials grant fails. All come from GEN_SECRET here, so they always match -
-#      no second place to edit (the substitution is global, so a further client using the same
-#      placeholder needs no change here). The template's secret is only ever a placeholder to
-#      substitute; see resolve_gen_secret above. The clients deliberately SHARE the secret: they differ by
-#      client_id (which is what the topology view identifies a caller by) and by role (admin vs
-#      writer), and a second secret in the same env file on the same host would separate nothing.
+#   2. The machine-to-machine client secrets, ONE PER CLIENT. Each client's realm secret must equal
+#      the value the compose file passes that client or its client-credentials grant fails, and both
+#      sides come from the same variable here, so they always match. The template's secrets are only
+#      ever placeholders to substitute; see resolve_secret above.
+#
+#      They used to be one shared value, on the argument that clients differing only by id and role
+#      gain nothing from separate secrets while both live in the same env file on the same host. That
+#      is true of host compromise and false of the leak that actually happened: a bridge's secret is a
+#      COMMAND-LINE ARGUMENT, so it is in `podman inspect`, in the deploy scripts' own output, and in
+#      any log or transcript that captured one. Sharing made one container's argv the credential for
+#      all five. Separate secrets do not stop the leak; they bound it to the client that leaked.
+#
+#      A NEW CLIENT NEEDS ITS OWN placeholder, its own variable, its own resolve_secret call and its
+#      own -e here. That is more work than the global substitution it replaces, and deliberately so.
 #
 # The generated file is pointed at via KEYCLOAK_REALM_FILE; its path in the env file is relative to
 # the compose file's directory (showcase/), matching the other realm mount.
@@ -242,9 +298,17 @@ REALM_RELATIVE="./keycloak/realm-hippocampus.generated.json"
 [[ -f "${REALM_TEMPLATE}" ]] || die "expected realm template at ${REALM_TEMPLATE}."
 
 echo "==> Rendering ${REALM_GENERATED} for base domain ${BASE_DOMAIN}"
+# The order of the three secret substitutions does not matter as the placeholders stand: none is a
+# substring of another (the two bridge names diverge at "-secret-" vs "-worldnews-"). It WOULD matter
+# if one ever became a substring of another - the shorter would fire inside the longer and leave a
+# mangled secret that authenticates nowhere - so a new client's placeholder must stay distinct under
+# substring, not merely unequal. Checked rather than assumed: reversing these two was verified to
+# produce identical output.
 sed \
   -e "s|hippocampus\.example|${BASE_DOMAIN}|g" \
-  -e "s|${REALM_PLACEHOLDER_SECRET}|${GEN_SECRET}|g" \
+  -e "s|${REALM_PLACEHOLDER_WORLDNEWS_SECRET}|${BLUESKY_BRIDGE_WORLDNEWS_SECRET}|g" \
+  -e "s|${REALM_PLACEHOLDER_BRIDGE_SECRET}|${BLUESKY_BRIDGE_SECRET}|g" \
+  -e "s|${REALM_PLACEHOLDER_GEN_SECRET}|${GEN_SECRET}|g" \
   "${REALM_TEMPLATE}" >"${REALM_GENERATED}"
 
 # Decide whether Keycloak needs to RE-import. --import-realm only imports into an empty volume and
@@ -301,6 +365,8 @@ cat >"${ENV_FILE}" <<EOF
 BASE_DOMAIN=${BASE_DOMAIN}
 ACME_EMAIL=${ACME_EMAIL}
 GEN_SECRET=${GEN_SECRET}
+BLUESKY_BRIDGE_SECRET=${BLUESKY_BRIDGE_SECRET}
+BLUESKY_BRIDGE_WORLDNEWS_SECRET=${BLUESKY_BRIDGE_WORLDNEWS_SECRET}
 # Domain-rendered realm produced above, so the console redirect URIs match ${BASE_DOMAIN}.
 KEYCLOAK_REALM_FILE=${REALM_RELATIVE}
 # Domain-rendered dashboard produced above, so Grafana's home dashboard carries a link back to the

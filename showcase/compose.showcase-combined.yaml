@@ -522,7 +522,7 @@ services:
       - "--oidc-client-id"
       - "hippocampus-bluesky-bridge"
       - "--oidc-client-secret"
-      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+      - "${BLUESKY_BRIDGE_SECRET:-showcase-bluesky-bridge-secret-change-me}"
     networks:
       - shared
     depends_on:
@@ -614,7 +614,7 @@ services:
       - "--oidc-client-id"
       - "hippocampus-bluesky-bridge-worldnews"
       - "--oidc-client-secret"
-      - "${GEN_SECRET:-showcase-gen-secret-change-me}"
+      - "${BLUESKY_BRIDGE_WORLDNEWS_SECRET:-showcase-bluesky-bridge-worldnews-secret-change-me}"
     networks:
       - shared
     depends_on:

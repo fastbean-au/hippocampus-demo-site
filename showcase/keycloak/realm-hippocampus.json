@@ -67,7 +67,7 @@
       "protocol": "openid-connect",
       "enabled": true,
       "publicClient": false,
-      "secret": "showcase-gen-secret-change-me",
+      "secret": "showcase-bluesky-bridge-secret-change-me",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
@@ -79,7 +79,7 @@
       "protocol": "openid-connect",
       "enabled": true,
       "publicClient": false,
-      "secret": "showcase-gen-secret-change-me",
+      "secret": "showcase-bluesky-bridge-worldnews-secret-change-me",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
