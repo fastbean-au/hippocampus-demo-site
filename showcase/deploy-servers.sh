@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# deploy-servers.sh - pull the current ghcr.io/fastbean-au/hippocampus image and move the SERVER
-# containers (hippocampus-book / hippocampus-bluesky / hippocampus-observer / the hippocampus-agent
-# pair) onto it, then put back
-# everything podman made us tear down to get there.
+# deploy-servers.sh - pull the images a Hippocampus release publishes and move the containers built
+# from them onto it, then put back everything podman made us tear down to get there. That is the five
+# SERVERS (hippocampus-book / hippocampus-bluesky / hippocampus-observer / the hippocampus-agent
+# pair), which share ghcr.io/fastbean-au/hippocampus, plus config-builder, which is the same release's
+# ghcr.io/fastbean-au/hippocampus-config-wizard image.
 #
-# WHY THIS EXISTS: nothing on this host ships a new server image on its own. `podman compose up -d`
+# WHY THIS EXISTS: nothing on this host ships a released image on its own. `podman compose up -d`
 # reuses the local copy, start-generators.sh only starts existing containers, deploy-generators.sh
 # covers the `-gen-*` images, deploy-site.sh covers the static landing page, and even
 # `systemctl restart hippocampus-showcase` - a full-stack outage - leaves the servers on the stale
@@ -32,13 +33,24 @@
 # EVERYTHING ELSE IS CHEAP, because nothing but a generator or a bridge requires it and caddy is not
 # in the way:
 #
-#   agent      -> the two agent servers + hippocampus-gen-agent          (3 containers)
-#   observer   -> hippocampus-observer + hippocampus-gen-observer        (2 containers)
-#   bluesky    -> hippocampus-bluesky + gen-observer + both bridges      (4 containers)
+#   agent          -> the two agent servers + hippocampus-gen-agent      (3 containers)
+#   observer       -> hippocampus-observer + hippocampus-gen-observer    (2 containers)
+#   bluesky        -> hippocampus-bluesky + gen-observer + both bridges  (4 containers)
+#   config-builder -> config-builder                                    (1 container)
 #
-# All three keep the apex up and touch no store. Prefer them when a release only needs proving on one
+# All four keep the apex up and touch no store. Prefer them when a release only needs proving on one
 # service. Note that gen-observer requires bluesky as well as observer, so the two overlap - naming
 # both costs no more than naming either.
+#
+# CONFIG-BUILDER IS THE CHEAPEST THING HERE and the only one with no edges in either direction: it
+# declares no depends_on and nothing declares one on it, so its blast radius is itself. It is also the
+# one that was going undeployed. It is not a demo of the memory store - it is the browser config/
+# deployment builder, served at config-builder.${BASE_DOMAIN} - but the release publishes its image
+# alongside the server's, and until it was named here NOTHING on this host ever pulled that image: it
+# moved only when a full-stack bounce happened to recreate the container. A wizard whose validation
+# mirrors `validateConfig` and whose defaults mirror the service's `viper.SetDefault` list is exactly
+# the thing that must not silently sit a few releases back, because what it gets wrong it gets wrong
+# in a config file someone then deploys. It is in the bare form's selection for that reason.
 #
 # THIS LIST IS NOT WHAT THE SCRIPT ACTS ON. The set it touches is discovered from podman's live
 # --requires edges at run time; the ORDER array below only fixes the sequence, and discovery fails
@@ -101,13 +113,14 @@
 # read-only bind mount. What the book store loses, it loses to the generator's --reset above.
 #
 # Run as root - the showcase containers live under root podman:
-#   sudo ./showcase/deploy-servers.sh                 # all five servers, skipping any already current
-#   sudo ./showcase/deploy-servers.sh agent           # both agent halves + their generator; apex stays up, no wipe
-#   sudo ./showcase/deploy-servers.sh bluesky         # bluesky + gen-observer + both bridges; apex stays up
-#   sudo ./showcase/deploy-servers.sh book            # the one that costs the apex and the book store
-#   sudo ./showcase/deploy-servers.sh --yes           # non-interactive; required when there is no TTY
-#   sudo ./showcase/deploy-servers.sh --force bluesky # recreate even if already on the pulled image
-#   sudo ./showcase/deploy-servers.sh --dry-run       # print the plan and the blast radius, change nothing
+#   sudo ./showcase/deploy-servers.sh                      # the five servers + config-builder, skipping any already current
+#   sudo ./showcase/deploy-servers.sh agent                # both agent halves + their generator; apex stays up, no wipe
+#   sudo ./showcase/deploy-servers.sh bluesky              # bluesky + gen-observer + both bridges; apex stays up
+#   sudo ./showcase/deploy-servers.sh config-builder       # just the config wizard; one container, no edges
+#   sudo ./showcase/deploy-servers.sh book                 # the one that costs the apex and the book store
+#   sudo ./showcase/deploy-servers.sh --yes                # non-interactive; required when there is no TTY
+#   sudo ./showcase/deploy-servers.sh --force bluesky      # recreate even if already on the pulled image
+#   sudo ./showcase/deploy-servers.sh --dry-run            # print the plan and the blast radius, change nothing
 #
 # Override the env file location if it is not the install default:
 #   sudo SHOWCASE_ENV=/path/to/showcase.env ./showcase/deploy-servers.sh
@@ -149,6 +162,12 @@ while [[ $# -gt 0 ]]; do
       SERVICES+=("hippocampus-$1")
       ;;
 
+    # The one selectable container whose compose service name carries no `hippocampus-` prefix, so it
+    # is both the friendly name and the real one.
+    config-builder)
+      SERVICES+=("config-builder")
+      ;;
+
     # The bare name selects BOTH halves of the agent pair. They are one demonstration - a comparison
     # between two stores - so deploying one without the other leaves the site showing a comparison
     # against a store running a different build. Name `agent-flat` explicitly to move just that half.
@@ -170,7 +189,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-servers: unknown argument '$1' (expected: book, agent, agent-flat, observer, bluesky, --force, --yes, --dry-run)" >&2
+      echo "deploy-servers: unknown argument '$1' (expected: book, agent, agent-flat, observer, bluesky, config-builder, --force, --yes, --dry-run)" >&2
 
       exit 1
       ;;
@@ -181,14 +200,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=(hippocampus-book hippocampus-agent hippocampus-agent-flat hippocampus-observer hippocampus-bluesky)
+  SERVICES=(hippocampus-book hippocampus-agent hippocampus-agent-flat hippocampus-observer hippocampus-bluesky config-builder)
 fi
 
 # Every container this script may touch, in CREATION order: a container appears after everything it
 # requires. Removal walks this backwards, bring-up walks it forwards. The set that actually gets
 # touched is discovered from podman's live edges below - this list only fixes the ORDER, and the
 # discovery fails loudly if it ever turns up something that is not named here.
+#
+# config-builder is first because it has no edges at all, in either direction - it can be removed and
+# recreated at any point without reference to anything else, so the position is free and the top is
+# where a reader looks for the thing nothing waits on.
 ORDER=(
+  config-builder
   hippocampus-book
   hippocampus-agent
   hippocampus-agent-flat
@@ -488,7 +512,8 @@ for service in "${SERVICES[@]}"; do
     exit 1
   fi
 
-  # All three servers share one image reference, so pull it once however many are selected.
+  # The five servers share one image reference and config-builder has its own, so pull per DISTINCT
+  # image rather than per service - a bare run pulls twice, not six times.
   case "${PULLED}" in
 
     *" ${IMAGE} "*)
