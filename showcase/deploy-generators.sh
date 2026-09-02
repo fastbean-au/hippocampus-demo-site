@@ -34,12 +34,22 @@
 # failure rather than waiting. Recreating the bridge alone is safe at any time; recreating it while
 # its service is down means one immediate restart.
 #
-# REMOVAL RUNS IN THE OPPOSITE ORDER, and every name in the selection is freed before any of them is
-# recreated. compose stamps depends_on as a podman `--requires` edge, and podman refuses to remove a
-# container while something requires it - so the bridge must go first, and the service cannot be
-# removed at all until it has. Interleaving the two (remove service, recreate service, remove bridge,
-# ...) is what broke this script's first bluesky run: the removal was refused, the `|| true` hid it,
-# the taken name sent compose down landmine (2), and the "deploy" started the old container again.
+# REMOVAL RUNS IN THE OPPOSITE ORDER, and every name is freed before any of them is recreated.
+# compose stamps depends_on as a podman `--requires` edge, and podman refuses to remove a container
+# while something requires it - so the bridge must go first, and the service cannot be removed at all
+# until it has. Interleaving the two (remove service, recreate service, remove bridge, ...) is what
+# broke this script's first bluesky run: the removal was refused, the `|| true` hid it, the taken name
+# sent compose down landmine (2), and the "deploy" started the old container again.
+#
+# WHAT COMES DOWN IS COMPUTED, NOT SELECTED. The set is the selection plus everything that
+# transitively `--requires` it, discovered from podman's live edges (blast_radius), and the extras are
+# torn down and put straight back on the image they already had. Before that, the `bluesky` target was
+# not merely incomplete but DESTRUCTIVE: hippocampus-gen-observer requires hippocampus-bluesky and was
+# in no argument this script accepted, so the teardown removed both bridges, was refused on the
+# service, and exited under `set -e` with the bridges deleted and never recreated - the store's only
+# reinforcement and delete consumer gone, while the apex stayed green and the run looked like a
+# failed deploy rather than an outage. Use deploy-servers.sh for the bluesky SERVICE if you want only
+# its image moved; this script's `bluesky` target is now safe either way.
 #
 # THE BOOK GENERATOR WIPES ITS STORE ON EVERY RECREATE. Its compose command carries `--reset` and
 # `--loop`, and the loop's first cycle runs immediately, so a new container purges hippocampus_book
@@ -94,8 +104,10 @@
 #   sudo ./showcase/deploy-generators.sh book           # just the book generator
 #   sudo ./showcase/deploy-generators.sh --force book   # recreate even if already on the pulled image
 #   sudo ./showcase/deploy-generators.sh bluesky        # the bluesky service AND both bridges, in that order
+#                                                       # (gen-observer requires the service, so it is recreated too)
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the Trending News bridge (a flag change, no new service image)
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge-worldnews   # just the WorldNews bridge
+#   sudo ./showcase/deploy-generators.sh --dry-run      # print the plan and everything the graph forces down, change nothing
 #
 # Override the env file location if it is not the install default:
 #   sudo SHOWCASE_ENV=/path/to/showcase.env ./showcase/deploy-generators.sh
@@ -113,6 +125,7 @@ COLLATERAL_WAIT_SECONDS=90
 COLLATERAL_POLL_SECONDS=3
 
 FORCE=0
+DRY_RUN=0
 SERVICES=()
 
 while [[ $# -gt 0 ]]; do
@@ -120,6 +133,10 @@ while [[ $# -gt 0 ]]; do
 
     --force)
       FORCE=1
+      ;;
+
+    --dry-run)
+      DRY_RUN=1
       ;;
 
     book | agent | observer)
@@ -159,7 +176,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-generators: unknown argument '$1' (expected: book, agent, observer, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force)" >&2
+      echo "deploy-generators: unknown argument '$1' (expected: book, agent, observer, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force, --dry-run)" >&2
 
       exit 1
       ;;
@@ -175,9 +192,12 @@ if [[ ${#SERVICES[@]} -eq 0 ]]; then
   SERVICES=(hippocampus-gen-book hippocampus-gen-agent hippocampus-gen-observer)
 fi
 
-# Sort the selection into a canonical order, which also dedupes `bluesky bluesky-bridge`. The order is
-# the reason this exists rather than taking argv as given: a bridge recreated before its service dials
-# a socket that is not there and exits (see the header).
+# Every container this script may touch, in CREATION order: a container appears after everything it
+# requires. It does two jobs. It sorts the SELECTION into a canonical order, which also dedupes
+# `bluesky bluesky-bridge` - the reason this exists rather than taking argv as given, since a bridge
+# recreated before its service dials a socket that is not there and exits (see the header). And it
+# sequences the wider TOUCHED set the blast radius computes below, where hippocampus-gen-observer's
+# position after hippocampus-bluesky is what makes it removable first and recreated last.
 ORDER=(
   hippocampus-bluesky
   hippocampus-bluesky-bridge
@@ -249,11 +269,12 @@ revision_of() {
   podman inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2>/dev/null || true
 }
 
-# dependents_of - the containers in this project holding a podman `--requires` edge on the given
+# dependents_of - the services in this project holding a podman `--requires` edge on the given
 # container id: the ones podman insists are removed BEFORE it. compose stamps those edges from
-# depends_on, which is why the bluesky bridge pins the bluesky service.
+# depends_on, which is why the bluesky bridge pins the bluesky service. Emits compose SERVICE names,
+# not container names, because that is what blast_radius, ORDER and the selection are all keyed on.
 dependents_of() {
-  local target="$1" name
+  local target="$1" name service
 
   if [[ -z "${target}" ]]; then
     return 0
@@ -261,9 +282,67 @@ dependents_of() {
 
   for name in $(podman ps -a --filter "label=io.podman.compose.project=${PROJECT}" --format '{{.Names}}'); do
     case " $(podman inspect -f '{{range .Dependencies}}{{.}} {{end}}' "${name}" 2>/dev/null) " in
-      *" ${target} "*) echo "${name}" ;;
+
+      *" ${target} "*)
+        service="$(podman inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "${name}" 2>/dev/null || true)"
+
+        if [[ -n "${service}" ]]; then
+          echo "${service}"
+        fi
+        ;;
+
     esac
   done
+}
+
+# contains - whether a value appears in the remaining arguments. Explicit rather than a substring
+# match, which would be wrong here: hippocampus-bluesky is a prefix of hippocampus-bluesky-bridge.
+contains() {
+  local needle="$1" item
+
+  shift
+
+  for item in "$@"; do
+    if [[ "${item}" == "${needle}" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# blast_radius - the selection plus everything that transitively requires it: the full set of
+# containers that must be removed to free the selected names. Discovered from podman's live edges
+# rather than hardcoded, so a new depends_on in the compose file is picked up without editing this
+# script.
+#
+# THIS IS THE FIX FOR THE `bluesky` TARGET, which before it was destructive rather than merely wrong.
+# hippocampus-gen-observer holds a --requires on hippocampus-bluesky but was in neither the bluesky
+# group nor any other argument, so no invocation could include it: the teardown removed both bridges,
+# was then refused on the service, and exited under `set -e` with the bridges DELETED AND NOT
+# RECREATED - taking the store's only reinforcement and delete consumer down while the apex stayed
+# green. The old advice ("select those in the same run") named no argument that existed. Nothing is
+# asked of the operator now; the set is computed.
+blast_radius() {
+  local -a queue=("$@") found=()
+  local name dep
+
+  while [[ ${#queue[@]} -gt 0 ]]; do
+    name="${queue[0]}"
+    queue=("${queue[@]:1}")
+
+    if contains "${name}" ${found[@]+"${found[@]}"}; then
+      continue
+    fi
+
+    found+=("${name}")
+
+    for dep in $(dependents_of "$(cid "$(cname "${name}")")"); do
+      queue+=("${dep}")
+    done
+  done
+
+  printf '%s\n' ${found[@]+"${found[@]}"}
 }
 
 # remove_service - free a service's container name so the recreate below cannot degrade to `podman
@@ -292,7 +371,7 @@ remove_service() {
 
   if [[ -n "${blockers}" ]]; then
     echo "deploy-generators: it is --require'd by: ${blockers}" >&2
-    echo "deploy-generators: select those in the same run so they are removed first - 'bluesky' takes the whole group." >&2
+    echo "deploy-generators: that edge is not in this script's ORDER; add it in creation order and retry." >&2
   fi
 
   return 1
@@ -307,10 +386,11 @@ running_services() {
 }
 
 # missing_services - the services that were running when this script started, are not running now,
-# and are not part of this run's selection (those are assert_deployed's business, not collateral).
-# Depends on BEFORE_RUNNING and SERVICES, both sorted, as `comm` requires.
+# and are not part of this run's TOUCHED set (those this run took down deliberately and puts back
+# itself, so they are the report's business rather than the collateral loop's). Depends on
+# BEFORE_RUNNING and TOUCHED, both sorted, as `comm` requires.
 missing_services() {
-  comm -13 <(printf '%s\n' "${SERVICES[@]}" | sort) \
+  comm -13 <(printf '%s\n' ${TOUCHED[@]+"${TOUCHED[@]}"} | sort) \
     <(comm -23 <(echo "${BEFORE_RUNNING}") <(running_services))
 }
 
@@ -386,7 +466,11 @@ assert_deployed() {
   return 0
 }
 
-assert_caddy_healthy
+if [[ ${DRY_RUN} -eq 1 ]]; then
+  assert_caddy_healthy || true
+else
+  assert_caddy_healthy
+fi
 
 BEFORE_RUNNING="$(running_services)"
 DEPLOYED=()
@@ -398,6 +482,7 @@ PLAN=()
 PLAN_WANT_REV=()
 PLAN_OLD_ID=()
 PLAN_OLD_REV=()
+PULLED=" "
 
 for service in "${SERVICES[@]}"; do
   IMAGE="$(image_for "${service}")"
@@ -412,8 +497,19 @@ for service in "${SERVICES[@]}"; do
   OLD_ID="$(cid "${NAME}")"
   OLD_REV="$(revision_of "${NAME}")"
 
-  echo "deploy-generators: pulling ${IMAGE}"
-  podman pull -q "${IMAGE}" >/dev/null
+  # The two bridges share one image reference, so pull per DISTINCT image rather than per service.
+  case "${PULLED}" in
+
+    *" ${IMAGE} "*)
+      ;;
+
+    *)
+      echo "deploy-generators: pulling ${IMAGE}"
+      podman pull -q "${IMAGE}" >/dev/null
+      PULLED+="${IMAGE} "
+      ;;
+
+  esac
 
   NEW_REV="$(revision_of "${IMAGE}")"
 
@@ -426,7 +522,11 @@ for service in "${SERVICES[@]}"; do
     continue
   fi
 
-  echo "deploy-generators: recreating ${service}"
+  if [[ ${DRY_RUN} -eq 1 ]]; then
+    echo "deploy-generators: would recreate ${service}"
+  else
+    echo "deploy-generators: recreating ${service}"
+  fi
 
   case "${service}" in
 
@@ -455,28 +555,84 @@ for service in "${SERVICES[@]}"; do
   PLAN_OLD_REV+=("${OLD_REV}")
 done
 
-# Free every name up front, walking the selection BACKWARDS. Removal is the mirror of creation: the
-# bridge is created after the service because it dials it, and so must be removed before it, because
-# podman refuses to remove a container that another one `--requires`. Doing this per-service inside
-# the recreate loop below - service, then bridge - is what left the service's name taken, compose
-# degrading to `podman start` on the old container, and the deploy shipping nothing.
-for (( i = ${#PLAN[@]} - 1; i >= 0; i-- )); do
-  remove_service "${PLAN[i]}"
+# The set that must actually come down: the planned services plus everything that requires them. It
+# is a SUPERSET of the plan - hippocampus-gen-observer requires hippocampus-bluesky without ever
+# being a thing this script deploys - and those extras are torn down and put straight back on the
+# image they already had. They are collateral of the graph, not of a mistake, so they are stated.
+TOUCHED=()
+
+if [[ ${#PLAN[@]} -gt 0 ]]; then
+  RADIUS="$(blast_radius "${PLAN[@]}")"
+
+  for candidate in "${ORDER[@]}"; do
+    if contains "${candidate}" ${RADIUS}; then
+      TOUCHED+=("${candidate}")
+    fi
+  done
+
+  # Anything podman says requires the selection but that ORDER does not name cannot be sequenced
+  # safely, and guessing is how a removal gets refused halfway through with names already freed.
+  for found in ${RADIUS}; do
+    if ! contains "${found}" "${ORDER[@]}"; then
+      echo "deploy-generators: ERROR - ${found} requires the selection but is not in ORDER." >&2
+      echo "deploy-generators: add it to ORDER in creation order and retry." >&2
+
+      exit 1
+    fi
+  done
+
+  for service in "${TOUCHED[@]}"; do
+    if ! contains "${service}" "${PLAN[@]}"; then
+      echo "deploy-generators: NOTE - ${service} requires the selection, so it is recreated too (same image)"
+    fi
+  done
+fi
+
+if [[ ${DRY_RUN} -eq 1 ]]; then
+  if [[ ${#TOUCHED[@]} -gt 0 ]]; then
+    echo
+    echo "deploy-generators: would deploy: ${PLAN[*]}"
+    echo "deploy-generators: podman requires tearing down, in this order: $(printf '%s ' "${TOUCHED[@]}")"
+  fi
+
+  echo
+  echo "deploy-generators: --dry-run; nothing was changed"
+
+  exit 0
+fi
+
+# Free every name up front, walking the TOUCHED set BACKWARDS through ORDER. Removal is the mirror of
+# creation: the bridge is created after the service because it dials it, and so must be removed
+# before it, because podman refuses to remove a container that another one `--requires`. Doing this
+# per-service inside the recreate loop below - service, then bridge - is what left the service's name
+# taken, compose degrading to `podman start` on the old container, and the deploy shipping nothing.
+for (( i = ${#TOUCHED[@]} - 1; i >= 0; i-- )); do
+  remove_service "${TOUCHED[i]}"
 done
 
-for (( i = 0; i < ${#PLAN[@]}; i++ )); do
-  service="${PLAN[i]}"
-
+# Forwards through ORDER, so a service comes back before the bridge that dials it. Only the PLANNED
+# services are held to a revision: the extras pulled in by the blast radius were never pulled for, so
+# asserting a revision on them would compare them against an image this run never fetched. They are
+# checked for being back UP, in the report below, exactly like any other collateral.
+for service in "${TOUCHED[@]}"; do
   # --no-deps keeps compose from walking the depends_on tree (keycloak, caddy, the stores). NOTE:
   # deliberately no --force-recreate - see landmine (1); the container is already gone in any case.
-  # A single `up` may well create a later member of the selection too (compose walks the project and
-  # every planned name is now free), which is harmless: its own turn then finds it already running,
-  # and assert_deployed still holds it to the pulled revision.
+  # A single `up` may well create a later member of the set too (compose walks the project and every
+  # touched name is now free), which is harmless: its own turn then finds it already running, and
+  # assert_deployed still holds it to the pulled revision.
   podman compose -f "${COMPOSE_FILE}" up -d --no-deps "${service}"
 
-  assert_deployed "${service}" "${PLAN_WANT_REV[i]}" "${PLAN_OLD_ID[i]}"
+  for (( i = 0; i < ${#PLAN[@]}; i++ )); do
+    if [[ "${PLAN[i]}" != "${service}" ]]; then
+      continue
+    fi
 
-  DEPLOYED+=("${service}:${PLAN_OLD_REV[i]:0:12}->${PLAN_WANT_REV[i]:0:12}")
+    assert_deployed "${service}" "${PLAN_WANT_REV[i]}" "${PLAN_OLD_ID[i]}"
+
+    DEPLOYED+=("${service}:${PLAN_OLD_REV[i]:0:12}->${PLAN_WANT_REV[i]:0:12}")
+
+    break
+  done
 done
 
 # Undo any collateral: a diff_hashes-triggered full-project down (landmine (1), which fires after any
@@ -521,12 +677,22 @@ while :; do
   sleep "${COLLATERAL_POLL_SECONDS}"
 done
 
-# Report what actually happened rather than asserting a containment compose does not guarantee.
+# Report what actually happened rather than asserting a containment compose does not guarantee. The
+# TOUCHED set is checked here rather than in the collateral loop above: this run took those down on
+# purpose and put them back itself, so one still down is a failure of THIS script, not something to
+# be quietly restarted and waited on.
 MISSING="$(missing_services)"
+STUCK=()
 
-if [[ -n "${MISSING}" ]]; then
-  echo "deploy-generators: WARNING - these services did not come back within ${COLLATERAL_WAIT_SECONDS}s and need attention:" >&2
-  echo "${MISSING}" >&2
+for service in ${TOUCHED[@]+"${TOUCHED[@]}"}; do
+  if [[ "$(podman inspect -f '{{.State.Running}}' "$(cname "${service}")" 2>/dev/null || true)" != "true" ]]; then
+    STUCK+=("${service}")
+  fi
+done
+
+if [[ ${#STUCK[@]} -gt 0 || -n "${MISSING}" ]]; then
+  echo "deploy-generators: WARNING - these services are not running and need attention:" >&2
+  printf '%s\n' ${STUCK[@]+"${STUCK[@]}"} ${MISSING} >&2
 
   exit 1
 fi
