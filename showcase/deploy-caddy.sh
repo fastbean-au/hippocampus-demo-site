@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 #
-# deploy-caddy.sh - recreate ONLY the front Caddy (plus the two generators that require it) to pick up
-# a compose-level change to the `caddy` service - init / healthcheck / env / ports / volumes - while
+# deploy-caddy.sh - recreate ONLY the front Caddy (plus the generators that require it) to pick up a
+# compose-level change to the `caddy` service - init / healthcheck / env / ports / volumes - while
 # leaving the backing services (postgres, opensearch, keycloak, otel-lgtm, book, logs) and the landing
 # site untouched.
+#
+# It also recreates the CALLBACK SINK (hippocampus-callback-sink, caddy/Caddyfile.callbacks), the
+# second Caddy on this host and the receiver for the observer store's forgetting callbacks. That is
+# here rather than in its own script for one reason: it is a bind-mounted Caddyfile with exactly the
+# stale-inode problem described below, and nothing else on the host would ever re-resolve the mount.
+# It costs nothing - no ports, no dependents, no apex involvement - and a delivery arriving while it is
+# gone is deferred onto the queue's backoff rather than lost.
 #
 # WHY THIS EXISTS: on this stack's podman-compose (1.0.6) a plain `podman compose up -d caddy`
 # recreates Caddy's ENTIRE depends_on tree (postgres/opensearch/keycloak/otel/book/logs) - a ~1-2 min
@@ -66,12 +73,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/compose.showcase-combined.yaml"
 CADDYFILE="${SCRIPT_DIR}/caddy/Caddyfile.combined"
 CADDY_SERVICE="caddy"
+# Every service holding a `--requires caddy` edge, which is what stops Caddy being removed while they
+# exist. Keep this in step with the `depends_on: caddy` entries in the compose file (and with
+# start-generators.sh's list) - a name here that no longer exists aborts the run at the recreate step,
+# under `set -e`, AFTER the generators have been removed and before they are brought back, and a name
+# MISSING from it means `podman rm` of Caddy is refused and the script fails with the apex still up
+# but the generators gone. Both were live: this list still read `hippocampus-gen-logs` (renamed to
+# `-observer`) and had never gained `hippocampus-gen-agent`.
 GEN_SERVICES=(
   hippocampus-gen-book
-  hippocampus-gen-logs
+  hippocampus-gen-agent
+  hippocampus-gen-observer
   hippocampus-bluesky-bridge
   hippocampus-bluesky-bridge-worldnews
 )
+
+# The callback sink (caddy/Caddyfile.callbacks) is the second Caddy on this host: the receiver for the
+# observer store's forgetting callbacks. It is recreated here for the reason spelled out in the header
+# - its Caddyfile is bind-mounted as a FILE, so a `git pull` that replaces the inode leaves the
+# container serving the old copy while the host file looks updated. It has no dependents and publishes
+# no ports, so this half costs nothing and blips nothing: a delivery arriving in the second it is gone
+# is deferred onto the queue's backoff and lands on the next pass, which is the whole point of it.
+SINK_SERVICE="hippocampus-callback-sink"
+SINK_CADDYFILE="${SCRIPT_DIR}/caddy/Caddyfile.callbacks"
 
 # Match the systemd unit: load BASE_DOMAIN / ACME_EMAIL / GEN_SECRET so compose interpolation uses the
 # real deployment's values rather than the compose defaults (hippocampus.example) - a hand-run compose
@@ -129,9 +153,9 @@ running_services() {
 # This is the check that would have caught the stale-inode bind mount described in the header, where
 # the host file was updated but the container kept reading the pre-update inode.
 assert_caddyfile_fresh() {
-  local name="$1" host_sum container_sum
+  local name="$1" file="${2:-${CADDYFILE}}" host_sum container_sum
 
-  host_sum="$(md5sum <"${CADDYFILE}" | awk '{print $1}')"
+  host_sum="$(md5sum <"${file}" | awk '{print $1}')"
   container_sum="$(podman exec "${name}" md5sum /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}')"
 
   if [[ -z "${container_sum}" ]]; then
@@ -141,7 +165,7 @@ assert_caddyfile_fresh() {
   fi
 
   if [[ "${host_sum}" != "${container_sum}" ]]; then
-    echo "deploy-caddy: ERROR - the mounted Caddyfile does not match ${CADDYFILE}." >&2
+    echo "deploy-caddy: ERROR - the mounted Caddyfile does not match ${file}." >&2
     echo "deploy-caddy: the container is serving a stale copy (host ${host_sum}, container ${container_sum})." >&2
 
     return 1
@@ -214,6 +238,42 @@ for svc in $(comm -23 <(echo "${BEFORE_RUNNING}") <(running_services)); do
   podman start "$(cname "${svc}")" >/dev/null 2>&1 || true
 done
 
+# The callback sink, on the same recreate-rather-than-reload reasoning. It is separate from the block
+# above because it shares nothing with the front Caddy: no ports, no dependents, no ACME, and no
+# reason for an edit to one to bounce the other. Skipped rather than failed when it is not deployed,
+# so this script still works against a stack that predates it.
+# Grep the compose file rather than ask `podman compose config --services`: podman-compose 1.0.6's
+# support for that subcommand is patchy, and this only has to answer whether the service is declared.
+if grep -q "^  ${SINK_SERVICE}:" "${COMPOSE_FILE}"; then
+  SINK_NAME="$(cname "${SINK_SERVICE}")"
+  OLD_SINK_ID="$(cid "${SINK_NAME}")"
+
+  echo "deploy-caddy: recreating the callback sink"
+  podman rm -f "${SINK_NAME}" >/dev/null 2>&1 || true
+  podman compose -f "${COMPOSE_FILE}" up -d --no-deps "${SINK_SERVICE}"
+
+  NEW_SINK_ID="$(cid "${SINK_NAME}")"
+
+  if [[ -z "${NEW_SINK_ID}" ]]; then
+    echo "deploy-caddy: ERROR - the callback sink did not come back; the observer store's callbacks" >&2
+    echo "deploy-caddy: will queue and retry until callbacks.maxAgeHours, then be discarded." >&2
+
+    exit 1
+  fi
+
+  # The same landmine (2) check the front Caddy gets: an id that did not change means compose
+  # degraded to `podman start` and the container is still serving the pre-edit bind mount.
+  if [[ -n "${OLD_SINK_ID}" && "${NEW_SINK_ID}" == "${OLD_SINK_ID}" ]]; then
+    echo "deploy-caddy: ERROR - the callback sink was restarted, not recreated (id unchanged)." >&2
+
+    exit 1
+  fi
+
+  assert_caddyfile_fresh "${SINK_NAME}" "${SINK_CADDYFILE}"
+else
+  echo "deploy-caddy: no callback sink in this stack; skipping it"
+fi
+
 # Bring the generators back. --no-deps again so recreating them does not drag Caddy (and its whole
 # tree) through another recreate.
 echo "deploy-caddy: recreating the generators"
@@ -231,3 +291,7 @@ if [[ -n "${COLLATERAL}" ]]; then
 fi
 
 echo "deploy-caddy: done - Caddy recreated (${OLD_CADDY_ID:0:12} -> ${NEW_CADDY_ID:0:12}) on the current definition"
+
+if [[ -n "${NEW_SINK_ID:-}" ]]; then
+  echo "deploy-caddy: done - callback sink recreated (${OLD_SINK_ID:0:12} -> ${NEW_SINK_ID:0:12})"
+fi

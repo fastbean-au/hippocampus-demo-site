@@ -505,6 +505,64 @@ sometimes not produce it, so the parser accepts reordered fields, markdown decor
 chatter, and falls back to the middle band when no rating is given. An empty note is the one
 unrecoverable case.
 
+### The callback queue — the push half of forgetting
+
+The observer store is the only one here with `callbacks.enabled`, and it is the only place in this
+showcase where the store **tells somebody** what it forgot rather than waiting to be asked.
+
+Every other transparency surface in Hippocampus is pull: `PreviewConsolidation` asks what a cycle
+_would_ take, `ExplainConsolidation` where one memory stands, `GetConsolidationStatus` when the next
+cycle is due, `GetForgottenMemories` what went. Callbacks are the push half — one HTTP POST per
+deletion batch and one per sleep cycle, out of a **persisted queue** with retry state, a bounded
+backlog and an abandon path.
+
+The receiver is `hippocampus-callback-sink`: a `caddy:2` container that answers `204` to
+`POST /callbacks` and does nothing else. That is the entire design. What is being demonstrated is the
+queue, not the receiver, and the queue's interesting behaviour is all in conditions a test constructs
+artificially and a live demo produces for free — a receiver that goes away for an hour, a cycle that
+forgets thousands of memories at once, a restart mid-backoff. Its rationale (why Caddy, why
+unauthenticated, why not the front Caddy) is written up in
+[`showcase/caddy/Caddyfile.callbacks`](../showcase/caddy/Caddyfile.callbacks).
+
+**Watch it in Grafana.** The provisioned dashboard's _Callbacks (push feed)_ row carries the queue
+depth, the delivery rate by kind and outcome, and the delivery duration. At rest the depth sits near
+zero and ticks up for a moment after each cycle; `sleep_completed` arrives once per cycle whether or
+not anything was forgotten, because "the cycle ran and took nothing" is information, and its absence
+is indistinguishable from a consolidator that has stopped.
+
+**Watch the deliveries themselves** in the sink's access log — the delivery kind rides in a header,
+so it is legible without the body:
+
+```sh
+sudo podman logs --tail 20 showcase_hippocampus-callback-sink_1 |
+  jq -r 'select(.msg == "handled request") |
+         [.status, .request.headers["X-Hippocampus-Callback-Kind"][0]] | @tsv'
+```
+
+**Take the receiver away**, which is the demonstration:
+
+```sh
+sudo podman stop showcase_hippocampus-callback-sink_1
+```
+
+Nothing breaks. The store keeps forgetting; each delivery fails, has its attempt count raised and its
+next attempt pushed out on a jittered exponential backoff, and stays on the queue. The depth climbs,
+and `hippo callbacks queue` (or `GET /v1/callbacks/queue`) shows the attempt counts and the receding
+deadlines. Start it again and the backlog drains on its own within a pass or two, with `queued_at`
+still reporting the original deletion instant rather than the delivery attempt. Delivery is
+**at-least-once**, so a receiver that matters must be idempotent; this one is trivially so.
+
+Leave it down long enough and the second half shows: the queue's caps — here `maxAgeHours: 6` and
+`maxRows: 200000`, tightened from the six-hourly-to-daily defaults so the behaviour is reachable in an
+afternoon — begin discarding the oldest undelivered deliveries. That is logged at Warn and counted,
+and it is the one discard in this system with no backstop: nothing re-derives an abandoned callback,
+because the memory it describes is already gone.
+
+**Nothing gates on the sink.** There is no `depends_on` in either direction: the observer must not
+stop working because its receiver is down (surviving exactly that is what the queue is _for_), and the
+sink must not acquire a podman `--requires` edge, which is what would make it impossible to stop on
+its own.
+
 ### Drive it with the generators
 
 The generators ship as published container images —

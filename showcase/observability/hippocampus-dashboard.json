@@ -283,6 +283,72 @@
           "legendFormat": "success={{success}}"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "Callbacks (push feed)",
+      "description": "The PUSH half of the forgetting-transparency surface: what this store has forgotten, POSTed to callbacks.url out of a persisted queue. Empty unless callbacks.enabled, and only ever populated by the instance that consolidates - a replica neither records nor dispatches.",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Callback queue depth",
+      "description": "Deliveries recorded but not yet accepted by the receiver. A healthy store sits near zero and spikes for a moment after each cycle. Sustained growth is a receiver failing or unreachable - nothing is lost while it lasts, since the queue is durable and drains on its own once the receiver returns, but it is excluded from the capacity target rather than from the disk, and past callbacks.maxRows/maxAgeHours the oldest deliveries are discarded for good.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(hippocampus_callbacks_queue_depth)",
+          "legendFormat": "queued"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Callback deliveries & abandonments",
+      "description": "Delivery attempts by kind and outcome, with the abandon rate beside them. Every non-2xx is a failure, including a 4xx, and each one is deferred onto a jittered backoff and retried - so a failed rate is a receiver to look at rather than data already lost. \"abandoned\" is the line with no backstop: those are notifications the queue caps discarded before the receiver ever took them, and nothing re-derives them, because the memories they describe are already gone.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (kind, outcome) (rate(hippocampus_callbacks_delivered_total[$__rate_interval]))",
+          "legendFormat": "{{kind}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(hippocampus_callbacks_abandoned_total[$__rate_interval]))",
+          "legendFormat": "abandoned"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Callback delivery duration",
+      "description": "How long one POST to the receiver takes. That endpoint belongs to somebody else, so this is where a receiver in trouble shows first - it moves before the queue depth does, and well before callbacks.timeoutSeconds turns a slow delivery into a failed one.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(hippocampus_callbacks_delivery_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(hippocampus_callbacks_delivery_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
     }
   ]
 }

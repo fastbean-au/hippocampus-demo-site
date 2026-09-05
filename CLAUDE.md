@@ -40,6 +40,13 @@ This repo holds two things for the Hippocampus demo:
    reads the firehose - reinforcement and deletes are blind by id, so it already covers the whole
    shared store, and the WorldNews bridge runs `--recall=false --honour-deletes=false --dids` to
    avoid doing either twice (see [`docs/showcase.md`](docs/showcase.md#two-feeds-one-store)).
+   The **observer** service is additionally the only one with `callbacks.enabled`: it POSTs what it
+   forgets to `hippocampus-callback-sink`, a `caddy:2` container that answers 204 and does nothing
+   else. The point is the persisted delivery queue's behaviour under real load — retries, backoff, a
+   bounded backlog, an abandon path — so the receiver is deliberately trivial and deliberately
+   separate, with no `depends_on` in either direction, so it can be stopped on its own (see
+   [`showcase/caddy/Caddyfile.callbacks`](showcase/caddy/Caddyfile.callbacks) and
+   [`docs/showcase.md`](docs/showcase.md#the-callback-queue--the-push-half-of-forgetting)).
    [`showcase/install-ubuntu.sh`](showcase/install-ubuntu.sh) stands the combined stack up on a fresh
    Ubuntu 24.04 host with a boot-persistent systemd unit (base domain + ACME email as options);
    [`showcase/uninstall-ubuntu.sh`](showcase/uninstall-ubuntu.sh) reverses it (keeping volumes and
@@ -115,8 +122,10 @@ sudo ./showcase/deploy-servers.sh             # all three; prompts about the ape
 sudo ./showcase/deploy-servers.sh --version 0.40.1 agent          # pin, or roll back, one service
 sudo ./showcase/deploy-servers.sh --dry-run --version 0.40.1      # what that would move, changing nothing
 
-# Recreate ONLY the front Caddy (+ the two generators that require it) to apply a change to the
-# `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. A plain
+# Recreate ONLY the front Caddy (+ the generators that require it) to apply a change to the
+# `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. It also
+# recreates the callback sink (the second Caddy on the host), for the same bind-mount reason and at no
+# cost — that container has no ports and no dependents. A plain
 # `up -d caddy` recreates Caddy's whole depends_on tree (a full-stack outage); this scopes it with
 # `up --no-deps` and never passes --force-recreate (see below). Brief apex blip — Caddy owns
 # :80/:443, so no zero-downtime swap is possible. This is also the ONLY reliable way to apply a

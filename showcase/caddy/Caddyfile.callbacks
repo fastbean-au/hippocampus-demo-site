@@ -1,0 +1,72 @@
+# The callback receiver for the OBSERVER store's forgetting callbacks (hippocampus TODO 92).
+#
+# WHAT IT IS FOR. Hippocampus' callbacks are a push feed of what a store has forgotten: one POST per
+# deletion batch and one per sleep cycle, backed by a persisted queue with retry state, a bounded
+# backlog and an abandon path. The interesting behaviour is all in conditions a test constructs
+# artificially and a live demo produces for free - a receiver that goes away for an hour, a cycle
+# that forgets thousands of memories at once, a restart mid-backoff. So the point of this container
+# is that it EXISTS and can be taken away; what it does with a delivery is deliberately nothing.
+#
+# WHY CADDY AND NOT A PURPOSE-BUILT RECEIVER. A receiver that stored or rendered the feed would be a
+# first-party image, which means a build, a release train and a deploy script, all to demonstrate
+# something that is not the receiver's. `respond 204` is the whole contract the queue cares about,
+# and caddy:2 is already a pinned third-party image on this host.
+#
+# WHY IT IS UNAUTHENTICATED. `callbacks.token` and `callbacks.signingSecret` exist and work, but
+# neither would be verified here - Caddy can check a bearer header and cannot check an HMAC, so
+# signing would mean sending a signature nobody validates. It is not published (no `ports:` in the
+# compose file), it is reachable only from the `shared` container network, and it accepts a feed
+# rather than serving one. A shared secret between two containers on one network would be theatre,
+# and a mismatched one would present exactly as the receiver outage this is here to let us watch.
+#
+# WHY IT IS SEPARATE FROM THE FRONT CADDY. The front Caddy could have carried this on an unpublished
+# port with no compose edit at all. It is a separate container because stopping the receiver on its
+# own is the single most interesting thing anyone will do with this - and on the front Caddy that
+# would take the whole site down with it.
+{
+	# Nothing administers this and nothing reaches it over TLS: it is an internal sink on a container
+	# network. auto_https off keeps Caddy from trying to provision a certificate for a bare port.
+	admin off
+	auto_https off
+}
+
+:8099 {
+	# Access logging is what makes a delivery visible - `podman logs showcase_hippocampus-callback-sink_1`.
+	# JSON because the useful part is structured: the request headers carry
+	# X-Hippocampus-Callback-Kind, which names the delivery (memory_forgotten / event_forgotten /
+	# sleep_completed) without the body being read.
+	log {
+		format json
+	}
+
+	# The compose healthcheck's target. Deliberately not the delivery path: a GET against /callbacks
+	# would either have to be accepted (making the healthcheck indistinguishable from a delivery in
+	# the log) or refused (making the healthcheck fail).
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Every branch below is a `handle`, and that is not stylistic. Caddy sorts directives by TYPE, not
+	# by the order they are written, so a `route` mixed in beside these would be tried after the
+	# catch-all `handle` at the bottom and never match - which is exactly what an earlier draft of this
+	# file did, answering 404 to every delivery while validating cleanly. `handle` blocks are mutually
+	# exclusive and are evaluated in written order, so this reads the way it behaves.
+	@delivery {
+		path /callbacks
+		method POST
+	}
+
+	# 204 rather than 200: the delivery is accepted and there is nothing to say about it. Any 2xx
+	# clears the queue row; anything else defers it onto the backoff.
+	handle @delivery {
+		respond 204
+	}
+
+	handle /callbacks {
+		respond "the callback sink accepts POST only" 405
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}

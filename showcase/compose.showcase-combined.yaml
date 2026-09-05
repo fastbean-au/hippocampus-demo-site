@@ -306,6 +306,58 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
+
+  # ---- callback receiver: the sink for the observer store's forgetting callbacks ------------------
+  #
+  # The observer store is the only one here with `callbacks.enabled` (config.showcase-observer.json).
+  # Hippocampus' callbacks are the PUSH half of its forgetting-transparency surface - one POST per
+  # deletion batch and one per sleep cycle, out of a persisted queue with retry state, a bounded
+  # backlog and an abandon path - and everything interesting about that queue happens in conditions a
+  # test constructs artificially and a live demo produces for free: a receiver that goes away for an
+  # hour, a cycle that forgets thousands of memories at once, a restart mid-backoff.
+  #
+  # So the point of this container is that it EXISTS and can be taken away. Stopping it is the
+  # demonstration:
+  #
+  #   sudo podman stop showcase_hippocampus-callback-sink_1     # watch the queue depth climb
+  #   sudo podman start showcase_hippocampus-callback-sink_1    # watch it drain on its own
+  #
+  # The rationale for it being caddy:2, unauthenticated and separate from the front Caddy is in
+  # caddy/Caddyfile.callbacks. Three things about the wiring here:
+  #
+  #   - NO `ports:`. It is reachable only from the `shared` network, which is where the observer is.
+  #   - NO `depends_on`, in EITHER direction. The observer must not gate on it (a receiver that is
+  #     down is precisely what the queue exists to survive, and a depends_on would turn a sink outage
+  #     into a store outage), and it must not gate on the observer (that would be a podman
+  #     `--requires` edge, which is what makes a container impossible to stop on its own - see
+  #     deploy-caddy.sh's header). Its blast radius is itself, deliberately.
+  #   - NO `init: true`, unlike the front Caddy. That is there because its healthcheck runs wget over
+  #     HTTPS, which forks an ssl_client helper that nothing reaps. This one probes plain HTTP on
+  #     loopback and forks nothing.
+  hippocampus-callback-sink:
+    image: caddy:2
+    restart: unless-stopped
+    volumes:
+      - ./caddy/Caddyfile.callbacks:/etc/caddy/Caddyfile:ro
+    networks:
+      - shared
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-T",
+          "5",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:8099/healthz",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   hippocampus-bluesky:
     image: ghcr.io/fastbean-au/hippocampus:latest
     restart: unless-stopped

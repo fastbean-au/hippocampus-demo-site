@@ -91,5 +91,23 @@
     "summarisationMinMemories": 0,
     "summarisationMinAgeInDays": 0,
     "summarisationMaxCandidates": 0
+  },
+  "callbacks": {
+    "enabled": true,
+    "url": "http://hippocampus-callback-sink:8099/callbacks",
+    "timeoutSeconds": 10,
+    "allDeletions": false,
+    "includeBodies": false,
+    "maxIdsPerDelivery": 500,
+    "events": {
+      "memoryForgotten": true,
+      "eventForgotten": true,
+      "sleepCompleted": true
+    },
+    "batchSize": 100,
+    "retryBaseBackoffSeconds": 1,
+    "retryMaxBackoffSeconds": 300,
+    "maxRows": 200000,
+    "maxAgeHours": 6
   }
 }
