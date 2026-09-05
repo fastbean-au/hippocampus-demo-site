@@ -93,6 +93,28 @@ sudo ./showcase/deploy-generators.sh book     # or just one
 sudo ./showcase/deploy-servers.sh bluesky     # cheap: apex stays up, no store touched
 sudo ./showcase/deploy-servers.sh             # all three; prompts about the apex + book store
 
+# BOTH deploy scripts take `--version <tag>`, which is how a particular release is deployed and how
+# one is rolled back; without it they ship whatever `:latest` resolves to at the moment they run, and
+# the post-deploy assert can only confirm that something moved rather than that the requested thing
+# did. It defaults to `latest`, so every invocation above is unchanged. A leading `v` is stripped (the
+# git tag is `v0.40.1`, the image tag `0.40.1`), a release number is cross-checked against the image's
+# version label before anything is torn down, and any other tag the registry carries works too.
+#
+# It is implemented by pulling the requested tag and then `podman tag`ging it onto the `:latest`
+# reference the compose file names — compose creates containers from whatever that resolves to on the
+# host and takes no per-run override, and editing the compose file instead would bounce the entire
+# stack (see the diff_hashes note below). So after a pinned run this host's `:latest` means the pinned
+# build until an unversioned run pulls again — which is also what makes the pin survive a reboot or a
+# full-stack bounce, both of which recreate every container from the local `:latest`.
+#
+# `deploy-generators.sh` spans TWO release trains, so one `--version` cannot cover a mixed selection:
+# the bluesky service and its bridges come from the hippocampus repo and carry release numbers, while
+# the three generators come from hippocampus-gen, which has never been tagged and publishes only
+# `latest`/`main`/`sha-<commit>`. Pin a generator with its `sha-<commit>` tag; a release number asked
+# of one fails on the pull, during the plan, before anything is torn down.
+sudo ./showcase/deploy-servers.sh --version 0.40.1 agent          # pin, or roll back, one service
+sudo ./showcase/deploy-servers.sh --dry-run --version 0.40.1      # what that would move, changing nothing
+
 # Recreate ONLY the front Caddy (+ the two generators that require it) to apply a change to the
 # `caddy` service OR to caddy/Caddyfile.combined, WITHOUT bouncing the backing services. A plain
 # `up -d caddy` recreates Caddy's whole depends_on tree (a full-stack outage); this scopes it with

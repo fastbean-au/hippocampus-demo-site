@@ -93,6 +93,36 @@
 # caught between restarts by a single reading, which used to fail the run over a service that was
 # fine seconds later. Only a service still down after COLLATERAL_WAIT_SECONDS now fails it.
 #
+# VERSION PINNING AND ROLLBACK. Every image reference in the compose file is `:latest`, so without
+# --version a run ships whatever that resolves to at the moment it runs: "deploy 0.41.0" and "go back
+# to 0.40.1" are both unexpressible, and assert_deployed can only confirm that SOMETHING moved, not
+# that the requested thing did. `--version <tag>` redirects the pull to that tag, reads the planned
+# revisions from it, and holds each container to it. It defaults to `latest`, so every existing
+# invocation is unchanged.
+#
+# THE SELECTION SPANS TWO RELEASE TRAINS, and that is the thing to know before reaching for it here.
+# hippocampus-bluesky and its two bridges come from the hippocampus repo's releases and carry real
+# release numbers (0.41.0, and the rolling 0.41). The three generators come from hippocampus-gen,
+# which has never been tagged: its images carry only `latest`, `main` and `sha-<commit>`. So a
+# release number pins the bluesky group, a `sha-<commit>` pins a generator, and asking for a release
+# number on a generator fails on the pull - loudly, during the plan, before anything is torn down.
+# One --version applies to everything selected, so pinning across the two groups is two runs.
+#
+# A leading `v` is accepted and stripped, because the git tag an operator remembers is `v0.40.1` while
+# the image tag the release publishes is `0.40.1`. A release number is additionally cross-checked
+# against the pulled image's `org.opencontainers.image.version` label, so a tag resolving to a build
+# other than the one it names fails rather than deploying quietly; a `sha-<commit>` tag skips that
+# check, since it already names one exact build.
+#
+# IT WORKS BY RETAGGING LOCALLY, and that is a decision rather than a shortcut. podman-compose creates
+# a container from whatever the compose file's image reference resolves to ON THIS HOST, and offers no
+# per-run override; editing the YAML to name the tag would work exactly once and cost the whole stack,
+# because any edit to that file fires the full-project down described above. So the requested tag is
+# pulled and then `podman tag`ged onto the reference the compose file names. Two consequences, both
+# wanted: this host's `:latest` stops meaning "the newest build" until something pulls it again (the
+# first thing an unversioned run does, so it is not sticky), and the pin therefore SURVIVES a reboot
+# or a full-stack bounce, both of which recreate every container from the local `:latest`.
+#
 # NEITHER BLUESKY CONTAINER LOSES DATA on a recreate - that store is in Postgres - but the bridge
 # holds three things only in memory, all by design: its Jetstream cursor (a restart resumes at the
 # live tip, so the gap is skipped), its capture and author indexes, and its topic-term index. The
@@ -108,6 +138,8 @@
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge # just the Trending News bridge (a flag change, no new service image)
 #   sudo ./showcase/deploy-generators.sh bluesky-bridge-worldnews   # just the WorldNews bridge
 #   sudo ./showcase/deploy-generators.sh --dry-run      # print the plan and everything the graph forces down, change nothing
+#   sudo ./showcase/deploy-generators.sh --version 0.40.1 bluesky-bridge         # pin, or roll back, a bridge
+#   sudo ./showcase/deploy-generators.sh --version sha-<commit> book             # the generators carry no release numbers
 #
 # Override the env file location if it is not the install default:
 #   sudo SHOWCASE_ENV=/path/to/showcase.env ./showcase/deploy-generators.sh
@@ -126,10 +158,32 @@ COLLATERAL_POLL_SECONDS=3
 
 FORCE=0
 DRY_RUN=0
+VERSION=latest
 SERVICES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+
+    # The image tag to deploy: a release number for the bluesky group (0.40.1, or v0.40.1 - the
+    # leading v is stripped, since the git tag and the image tag differ only by it), a `sha-<commit>`
+    # for a generator, or any other tag the registry carries. `latest` is the default and the
+    # pre-existing behaviour. See the header on the two release trains this script spans.
+    --version | --version=*)
+      if [[ "$1" == --version=* ]]; then
+        VERSION="${1#--version=}"
+      else
+        shift
+        VERSION="${1:-}"
+      fi
+
+      VERSION="${VERSION#v}"
+
+      if [[ -z "${VERSION}" ]] || [[ "${VERSION}" =~ [[:space:]/:] ]]; then
+        echo "deploy-generators: ERROR - --version wants an image tag (e.g. 0.40.1), not '${VERSION}'" >&2
+
+        exit 1
+      fi
+      ;;
 
     --force)
       FORCE=1
@@ -176,7 +230,7 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      echo "deploy-generators: unknown argument '$1' (expected: book, agent, observer, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --force, --dry-run)" >&2
+      echo "deploy-generators: unknown argument '$1' (expected: book, agent, observer, bluesky, bluesky-bridge, bluesky-bridge-worldnews, --version, --force, --dry-run)" >&2
 
       exit 1
       ;;
@@ -267,6 +321,40 @@ image_for() {
 # hippocampus-gen's workflow stamps on. Empty if the label is absent.
 revision_of() {
   podman inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2>/dev/null || true
+}
+
+# version_of - the human-readable release an image or container was built from, via the OCI version
+# label. Empty for anything from a repo that publishes no release numbers - which is every generator
+# here, so nothing may treat its absence as a fault.
+version_of() {
+  podman inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null || true
+}
+
+# is_release_number - whether a requested version names a release (0.41.0, 0.41, 0.42.0-rc.1) rather
+# than an arbitrary tag. Only a release number is cross-checked against an image's version label: a
+# `sha-<commit>` tag - the only way to pin a generator - already names one exact build, so there is
+# nothing left for a label to confirm.
+is_release_number() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]]
+}
+
+# pull_ref - the compose file's image reference with its tag replaced by the requested version, which
+# under the default `latest` is usually the reference itself. The tag is the part after the LAST
+# colon, and only when that colon follows the last slash, so a registry:port host keeps its port -
+# none here uses one today, but getting that wrong would be silent rather than loud.
+pull_ref() {
+  local ref="$1" base tag
+
+  base="${ref%:*}"
+  tag="${ref##*:}"
+
+  if [[ "${base}" == "${ref}" || "${tag}" == */* ]]; then
+    echo "${ref}:${VERSION}"
+
+    return 0
+  fi
+
+  echo "${base}:${VERSION}"
 }
 
 # dependents_of - the services in this project holding a podman `--requires` edge on the given
@@ -426,7 +514,7 @@ assert_caddy_healthy() {
 # catches landmine (2) - a silent `podman start` leaves the OLD image, and so the OLD revision, in
 # place while every preceding log line claims success.
 assert_deployed() {
-  local service="$1" want_rev="$2" old_id="$3" name new_id got_rev
+  local service="$1" want_rev="$2" old_id="$3" name new_id got_rev got_version
 
   name="$(cname "${service}")"
   new_id="$(cid "${name}")"
@@ -453,6 +541,18 @@ assert_deployed() {
     podman logs --tail 20 "${name}" 2>&1 | sed 's/^/  /' >&2
 
     return 1
+  fi
+
+  # Held to the release number first, where one was asked for, so the failure speaks in the units the
+  # request was made in; the revision below is the same fact stated as an identity.
+  if is_release_number "${VERSION}"; then
+    got_version="$(version_of "${name}")"
+
+    if [[ -n "${got_version}" && "${got_version}" != "${VERSION}" ]]; then
+      echo "deploy-generators: ERROR - ${service} is running version ${got_version}, expected ${VERSION}." >&2
+
+      return 1
+    fi
   fi
 
   got_rev="$(revision_of "${name}")"
@@ -483,6 +583,12 @@ PLAN_WANT_REV=()
 PLAN_OLD_ID=()
 PLAN_OLD_REV=()
 PULLED=" "
+PIN_FROM=()
+PIN_TO=()
+
+if [[ "${VERSION}" != "latest" ]]; then
+  echo "deploy-generators: pinning to tag ${VERSION}; this host's :latest will point at it until an unversioned run pulls again."
+fi
 
 for service in "${SERVICES[@]}"; do
   IMAGE="$(image_for "${service}")"
@@ -497,21 +603,52 @@ for service in "${SERVICES[@]}"; do
   OLD_ID="$(cid "${NAME}")"
   OLD_REV="$(revision_of "${NAME}")"
 
+  # WANTED is what this run fetches and reads labels from; IMAGE is what compose will create the
+  # container from. They are the same reference under an unversioned run and differ only in the tag
+  # otherwise, and keeping them apart all the way through is what the retag below reconciles.
+  WANTED="$(pull_ref "${IMAGE}")"
+
   # The two bridges share one image reference, so pull per DISTINCT image rather than per service.
   case "${PULLED}" in
 
-    *" ${IMAGE} "*)
+    *" ${WANTED} "*)
       ;;
 
     *)
-      echo "deploy-generators: pulling ${IMAGE}"
-      podman pull -q "${IMAGE}" >/dev/null
-      PULLED+="${IMAGE} "
+      echo "deploy-generators: pulling ${WANTED}"
+
+      # Named rather than left to podman's own "manifest unknown", which is the most likely failure of
+      # a pinned run here: a release number asked of a generator, whose repo publishes none, looks
+      # exactly like this and is a bad argument rather than an infrastructure fault.
+      if ! podman pull -q "${WANTED}" >/dev/null; then
+        echo "deploy-generators: ERROR - could not pull ${WANTED}; is ${VERSION} a tag that image carries?" >&2
+
+        exit 1
+      fi
+
+      PULLED+="${WANTED} "
+
+      # A tag that resolves to a build other than the one it names fails the run HERE, while nothing
+      # has been touched, rather than being discovered from a revision mismatch after the teardown.
+      if is_release_number "${VERSION}"; then
+        GOT_VERSION="$(version_of "${WANTED}")"
+
+        if [[ -n "${GOT_VERSION}" && "${GOT_VERSION}" != "${VERSION}" ]]; then
+          echo "deploy-generators: ERROR - ${WANTED} is labelled version ${GOT_VERSION}, not ${VERSION}." >&2
+
+          exit 1
+        fi
+      fi
+
+      if [[ "${WANTED}" != "${IMAGE}" ]]; then
+        PIN_FROM+=("${WANTED}")
+        PIN_TO+=("${IMAGE}")
+      fi
       ;;
 
   esac
 
-  NEW_REV="$(revision_of "${IMAGE}")"
+  NEW_REV="$(revision_of "${WANTED}")"
 
   # Nothing to ship: the running container is already built from the image we just pulled. Skipping
   # here is what keeps a routine run from purging the book store (see the header) for no gain.
@@ -600,6 +737,23 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
 
   exit 0
 fi
+
+# Move the compose file's image reference onto the build that was pulled. compose creates containers
+# from whatever that reference resolves to here and takes no per-run override, and editing the YAML to
+# name the tag would fire the full-project down (landmine (1)) - so the tag is moved locally instead,
+# which is what keeps a pinned deploy as contained as an unpinned one.
+#
+# DELIBERATELY AFTER THE DRY-RUN EXIT AND BEFORE EVERYTHING ELSE: this is the first thing a run
+# changes, and a run that then fails partway leaves the tag moved. That is the right way round - the
+# operator asked for that build, and the next unversioned run pulls `:latest` back over it - but it
+# does mean an abandoned deploy still decides what the next reboot brings up. It is also why this sits
+# outside the `${#PLAN[@]}` guards above: a pinned run whose services are ALL already current still
+# has to leave the tag where it was asked to point, or "already on 0.40.1" is true now and false after
+# the next restart.
+for (( i = 0; i < ${#PIN_FROM[@]}; i++ )); do
+  echo "deploy-generators: tagging ${PIN_FROM[i]} as ${PIN_TO[i]}"
+  podman tag "${PIN_FROM[i]}" "${PIN_TO[i]}"
+done
 
 # Free every name up front, walking the TOUCHED set BACKWARDS through ORDER. Removal is the mirror of
 # creation: the bridge is created after the service because it dials it, and so must be removed
