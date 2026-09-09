@@ -39,7 +39,7 @@ The **book** stack adds an `ollama` service holding a small embedding model for
 0.5 GiB resident while serving. Its CPU cost is bursty rather than continuous — bodies are embedded
 as they are stored, and the book generator writes once every 24 hours — but a `--reset` cycle
 re-embeds the whole book, so expect a few minutes of elevated CPU then. Drop the `ollama` service
-(and set `ollama.embedding.enabled` false in `config.showcase-book.json`) if you would rather not
+(and set `llm.embedding.enabled` false in `config.showcase-book.json`) if you would rather not
 spend it.
 
 |              | Recommendation                                                         |

@@ -33,15 +33,22 @@ days. They differ where the two shapes differ:
   leaves capacity uncapped — the store is small and purged each day.
 - **logs** disables summarisation and caps the store (`capacityBytes`/`capacityMemories`) so eviction
   keeps the ever-growing trickle bounded.
-- **book** also enables **semantic search** (`ollama.embedding`), so the console's search tab offers
+- **book** also enables **semantic search** (`llm.embedding`), so the console's search tab offers
   keyword, semantic, and hybrid modes. See [Semantic search](#semantic-search) below for why it
   rides with the book example and not the logs one.
 - **bluesky** enables summarisation too, and is the only one that performs it **itself**
-  (`ollama.enabled` + `ollama.autoSummarise`): the book example's summaries are written by its
+  (`llm.enabled` + `llm.autoSummarise`): the book example's summaries are written by its
   generator, which bluesky has no equivalent of. See
   [Auto-summarisation](#auto-summarisation-bluesky) below.
 
 Both enable OpenSearch and ship metrics/traces to `otel-lgtm` by default.
+
+> **The LLM keys are `llm.*`, which the service has spoken since 0.43.0.** The old name was
+> `ollama.*`, still honoured as a deprecated alias by the binary but no longer used here. This
+> matters when a server is pinned or rolled back: the configs are bind-mounted from this checkout and
+> read at container start, so `deploy-servers.sh --version 0.42.x` would leave the block **unread** —
+> semantic search and auto-summarisation silently off, with nothing failing to say so. Roll the config
+> back with the server, or stay on 0.43.0 or later.
 
 ## Semantic search
 
@@ -64,7 +71,7 @@ It is wired to the **book** service only, for two reasons that happen to agree:
 The model is **`all-minilm`** (~45 MB, 384 dimensions) rather than the more usual
 `nomic-embed-text` (~275 MB, 768) — a deliberate footprint choice for a demo VM already running
 Postgres, OpenSearch, Keycloak and Grafana. Override it with `EMBEDDING_MODEL`, but note that
-changing the model means changing `ollama.embedding.dimensions` in the config to match **and**
+changing the model means changing `llm.embedding.dimensions` in the config to match **and**
 rebuilding the index (`--backfill-search --reindex`): a k-NN index fixes its vector width at
 creation.
 
@@ -96,7 +103,7 @@ read memory bodies, so it cannot write the summary itself.
 Something then has to **do** the summarising, by calling `ReplaceMemoriesWithSummary` with text it
 authored. In the book example that is the generator (`cmd/book --summarize`). Bluesky has no
 generator — the bridge is both loader and load, and it cannot summarise — so it uses the other
-route: `ollama.enabled` plus `ollama.autoSummarise` make the sleep cycle summarise its own
+route: `llm.enabled` plus `llm.autoSummarise` make the sleep cycle summarise its own
 candidates with the embedded LLM, right after the scan that found them. A visitor cannot stand in
 for either, because `SummariseMemories` and `ReplaceMemoriesWithSummary` are both `TierWriter`
 (`auth/authz.go`) and the demo login is a reader.
@@ -109,11 +116,11 @@ a candidate once fresh replies have accumulated again.
 The tuning is all about not spending the box's CPU on it:
 
 - `summarisationMaxCandidates: 3` bounds one cycle to three generations, and the scan orders by
-  memory count descending, so the fattest threads go first. With `ollama.timeoutSeconds: 45` the
+  memory count descending, so the fattest threads go first. With `llm.timeoutSeconds: 45` the
   worst case stays inside the 180 s `sleep.periodSeconds` (cycles are serialised, so an overrun only
   delays the next one — but a cycle that never finishes on time is a cycle whose other passes are
   late too).
-- `ollama.maxMemories: 40` and `ollama.promptCharLimit: 6000` keep the prompt inside a 0.5 B model's
+- `llm.maxMemories: 40` and `llm.promptCharLimit: 6000` keep the prompt inside a 0.5 B model's
   usefully-attended context; `temperature: 0.2` keeps the summary faithful rather than inventive.
 - `summarisationMinAgeInDays` **must stay 0 here.** It is a whole-day integer, and under this
   config's clock (`unitsOfAgeInDays: 0.125`) an unengaged headline lives ~6 hours and a reply under
@@ -492,7 +499,7 @@ sudo podman exec showcase_ollama_1 ollama pull qwen2.5:1.5b
 > that this agent hit its timeout and retried, which made it worse again.
 >
 > One shared generative model plus the embedding model is **two** resident models, not three. Keep
-> `OBSERVER_MODEL` and `ollama.model` in `config.showcase-bluesky.json` in step; 1.5b is the chosen
+> `OBSERVER_MODEL` and `llm.model` in `config.showcase-bluesky.json` in step; 1.5b is the chosen
 > size because 0.5b does not reliably follow the reply format or the "do not repeat" instruction, and
 > 3b is what made the host unaffordable.
 

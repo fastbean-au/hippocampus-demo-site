@@ -58,9 +58,10 @@
     "reconcileIntervalSeconds": 3600,
     "reconcileBatchSize": 500
   },
-  "ollama": {
+  "llm": {
     "embedding": {
       "enabled": true,
+      "provider": "ollama",
       "address": "http://ollama:11434",
       "model": "all-minilm",
       "dimensions": 384,

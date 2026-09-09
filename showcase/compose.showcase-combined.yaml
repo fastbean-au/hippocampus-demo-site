@@ -276,7 +276,7 @@ services:
   #
   # 1.5b rather than 0.5b because 0.5b does not reliably follow the reply format or the
   # "do not repeat what you already noted" instruction; rather than 3b because 3b is what made the
-  # host unaffordable. Keep this in step with ollama.model in config.showcase-bluesky.json.
+  # host unaffordable. Keep this in step with llm.model in config.showcase-bluesky.json.
   #
   # THE INTERVAL AND TIMEOUT ARE SET BY THE SHARING, NOT BY THIS AGENT. ollama serialises requests
   # per model, and the bluesky auto-summariser - now on the same model - generates from up to forty
@@ -737,7 +737,7 @@ services:
   # made the box unaffordable. Override with SUMMARY_MODEL, which needs no reindex (unlike
   # EMBEDDING_MODEL, whose width is fixed at k-NN index creation).
   #
-  # SUMMARY_MODEL, ollama.model in config.showcase-bluesky.json, and OBSERVER_MODEL must all name the
+  # SUMMARY_MODEL, llm.model in config.showcase-bluesky.json, and OBSERVER_MODEL must all name the
   # SAME model. This pull and the healthcheck below are what put it on the host at all, so a mismatch
   # means the odd one out asks for a model that is not there - and /api/generate does not pull on
   # demand, it fails.

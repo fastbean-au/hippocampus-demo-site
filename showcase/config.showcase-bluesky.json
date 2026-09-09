@@ -58,9 +58,10 @@
     "reconcileIntervalSeconds": 600,
     "reconcileBatchSize": 500
   },
-  "ollama": {
+  "llm": {
     "enabled": true,
     "autoSummarise": true,
+    "provider": "ollama",
     "address": "http://ollama:11434",
     "model": "qwen2.5:1.5b",
     "timeoutSeconds": 120,
