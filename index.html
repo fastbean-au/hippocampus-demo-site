@@ -105,7 +105,7 @@
             "image": "https://hippocampus-demo.com/assets/og-image.png",
             "softwareHelp": "https://github.com/fastbean-au/hippocampus",
             "codeRepository": "https://github.com/fastbean-au/hippocampus",
-            "keywords": "storage engine, data retention, edge ingestion, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, MCP server, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
+            "keywords": "storage engine, data retention, edge ingestion, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, agent memory, MCP server, LlamaIndex, Python client, semantic search, hybrid search, vector search, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, OpenTelemetry, Prometheus, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
             "publisher": { "@id": "https://hippocampus-demo.com/#org" },
             "offers": {
               "@type": "Offer",
@@ -252,6 +252,36 @@
                 pressure.
               </p>
             </article>
+            <article class="card">
+              <h3>Pressure, not just age</h3>
+              <p>
+                Give it a capacity target in rows or bytes and the decay
+                threshold scales with how full the store is: forgetting sharpens
+                as space runs short and eases when it does not. A memory can
+                also declare the bytes it merely <em>points at</em>, so the same
+                pressure governs a payload this store never holds.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Nothing forgets silently</h3>
+              <p>
+                Ask what the next cycle <em>would</em> forget before it runs,
+                ask any single memory where it stands and how long it has left,
+                and keep a
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#what-was-forgotten--the-forgotten-log"
+                  rel="noopener"
+                  ><strong>log of what went</strong></a
+                >, with the value and the threshold that decided it. An outbound
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/configuration.md#outbound-callbacks"
+                  rel="noopener"
+                  ><strong>callback</strong></a
+                >
+                can tell whatever owns the payload behind a memory that it is
+                about to go.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -281,8 +311,15 @@
                   rel="noopener"
                   ><strong>Model Context Protocol (MCP)</strong></a
                 >
-                server — works with Claude, ChatGPT, Grok, or any MCP host. Any
-                language with a gRPC or HTTP stack gets a client in minutes:
+                server — works with Claude, ChatGPT, Grok, or any MCP host.
+                <strong>Python</strong> has a published client —
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/python.md"
+                  rel="noopener"
+                  ><code>pip install hippocampus-client</code></a
+                >, covering the full RPC surface and released from the same tag
+                as the contract it was generated from. Any other language with a
+                gRPC or HTTP stack gets a client in minutes:
                 <a
                   href="https://github.com/fastbean-au/hippocampus/blob/main/docs/clients.md"
                   rel="noopener"
@@ -329,10 +366,20 @@
             <article class="card">
               <h3>Extend the core</h3>
               <p>
-                Optional back-ends layer extra capability onto the engine:
-                <strong>OpenSearch</strong> for full-text content search across
-                memories, and local <strong>Ollama</strong> summarisation that
-                runs on your own hardware.
+                Keyword search over memory content works on every driver with
+                nothing to configure and no cluster to run. Point the engine at
+                <strong>OpenSearch</strong> and an embedding model and the same
+                call also does
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/configuration.md#semantic-search"
+                  rel="noopener"
+                  ><strong>semantic and hybrid</strong></a
+                >
+                retrieval — meaning, not only matching words. Summarisation
+                works the same way: the sleep cycle can distil a finished event
+                into a single memory by itself, against a local
+                <strong>Ollama</strong> or any
+                <strong>OpenAI-compatible</strong> endpoint.
               </p>
             </article>
             <article class="card">
@@ -346,7 +393,18 @@
                 >
                 plugin uses Hippocampus as the storage backend for your vault,
                 so your notes live in the same engine as the rest of your
-                long-term memory.
+                long-term memory. For agents, the
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/llamaindex.md"
+                  rel="noopener"
+                  ><strong>LlamaIndex</strong></a
+                >
+                adapter (<code>llama-index-memory-hippocampus</code>, over the
+                published Python client) drops in as a long-term memory block
+                whose retrieval <em>reinforces</em> what it returns: a fact the
+                agent keeps reaching for survives by being used, and one it
+                never retrieves decays out — no eviction policy, no cap, no TTL
+                to maintain.
               </p>
             </article>
             <article class="card">
@@ -384,7 +442,36 @@
                   ><strong>Kubernetes</strong></a
                 >
                 (Kustomize) bases are all maintained in-repo, and the multi-arch
-                image runs anywhere a container does.
+                image runs anywhere a container does. Before any of that, the
+                <a
+                  href="https://config-builder.hippocampus-demo.com"
+                  rel="noopener"
+                  ><strong>configuration builder</strong></a
+                >
+                writes the config and the deployment artefacts for you, in your
+                browser.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Operating it</h3>
+              <p>
+                Metrics and traces leave over <strong>OTLP</strong>, or the same
+                metrics are served for <strong>Prometheus</strong> to scrape —
+                no collector in the middle just to change protocol. The
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/tree/main/deploy/observability"
+                  rel="noopener"
+                  ><strong>alert rules</strong></a
+                >
+                and a Grafana dashboard ship with the source, health and
+                readiness probes are built in, and a
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#seeing-the-deployment"
+                  rel="noopener"
+                  ><strong>topology view</strong></a
+                >
+                shows what an instance is attached to — stores, search, model
+                endpoints, peers, bridges — and the last known health of each.
               </p>
             </article>
             <article class="card">
@@ -397,7 +484,10 @@
                 <strong>reader/writer/admin</strong> tiers say what a caller may
                 do; optional <strong>group scoping</strong> says which records
                 they may do it to, so teams can share one store without sharing
-                their memories.
+                their memories. When one of them leaves, deletion by
+                <strong>predicate</strong> drains their records by group, time,
+                or metadata rather than by id — the filter that lists them is
+                the filter that deletes them.
               </p>
             </article>
           </div>

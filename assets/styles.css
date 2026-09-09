@@ -339,6 +339,13 @@ code {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
 
+/* The "how" grid holds six cards: a wider track gives three across, so the
+   second row is full. The shared 230px track would fit four and leave it half
+   empty. min() keeps the track from overflowing narrower viewports. */
+#how .features {
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+
 .demos {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
