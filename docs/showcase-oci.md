@@ -35,7 +35,7 @@ identical, so this document concentrates on the OCI-specific plumbing.
 > The combined stack runs the generators **as containers**, so it is self-driving on both `x86-64`
 > (`E4.Flex`) and `arm64` (`A1.Flex`) — **skip step 6**, and
 > [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh) does steps 4–7 in one shot. See
-> [Both examples on one domain](showcase.md#both-examples-on-one-domain-a-single-merged-stack).
+> [Every console on one domain](showcase.md#every-console-on-one-domain-the-combined-stack).
 
 ## 0. Prerequisites and OCI vocabulary
 

@@ -2,21 +2,30 @@
 
 A publicly reachable demonstration of Hippocampus — the web console, OpenSearch content search
 (keyword **and semantic**), and the Grafana/OTEL telemetry stack — with the UI protected by an
-identity provider. It runs as **two
-independent stacks**, each driven by the [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen)
-generators:
+identity provider. What is hosted is **one combined stack** serving **five consoles**, each a store
+with a different shape, behind a single Caddy, a single Keycloak and a single Grafana:
 
-| Stack    | Shape                                                                 | Generator                                                                   |
-| -------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **book** | _Great Expectations_ reloaded daily, summarised, decaying             | `cmd/book --loop --period 24h --reset --live --pace-window <w> --summarise` |
-| **logs** | a continuous log trickle, reaped by consolidation + capacity eviction | `cmd/logs --live --rate <n>`                                                |
+| Console                    | Shape                                                                         | Driven by                  |
+| -------------------------- | ----------------------------------------------------------------------------- | -------------------------- |
+| **book**                   | _Great Expectations_ reloaded daily, summarised, decaying                     | `hippocampus-gen-book`     |
+| **bluesky**                | two curated feeds, reinforced by the likes and reposts they earn              | two Bluesky bridges        |
+| **agent** / **agent-flat** | one writer, two stores — the twin is told every memory is equally significant | `hippocampus-gen-agent`    |
+| **observer**               | an agent that reads the bluesky store and decides for itself what matters     | `hippocampus-gen-observer` |
 
-The service configs are [`showcase/config.showcase-book.json`](../showcase/config.showcase-book.json) and
-[`showcase/config.showcase-logs.json`](../showcase/config.showcase-logs.json); the compose stacks are
-[`showcase/compose.showcase-book.yaml`](../showcase/compose.showcase-book.yaml) and
-[`…-logs.yaml`](../showcase/compose.showcase-logs.yaml). This document covers the
-identity-provider setup and how to run the stacks; the per-cloud VM provisioning is a separate
-runbook — [GCP](showcase-gcp.md) or [OCI](showcase-oci.md).
+The generators come from [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) and run
+**as containers in the stack**, so one `up -d` brings up the servers and the load that feeds them.
+The service configs are `showcase/config.showcase-*.json`, one per console, and the stack is
+[`showcase/compose.showcase-combined.yaml`](../showcase/compose.showcase-combined.yaml). This
+document covers the identity-provider setup and how to run it; the per-cloud VM provisioning is a
+separate runbook — [GCP](showcase-gcp.md) or [OCI](showcase-oci.md).
+
+> **Single-console stacks still ship**, and the per-cloud runbooks are written against them: a
+> **book** stack ([`…-book.yaml`](../showcase/compose.showcase-book.yaml)) and a **logs** stack
+> ([`…-logs.yaml`](../showcase/compose.showcase-logs.yaml)), each with a Caddy and a Keycloak of its
+> own. The logs console was retired from the hosted stack on 2026-08-27 — the agent pair came to show
+> the same thing, significance deciding what survives, with a _control_ to compare it against, which
+> the logs trickle never had. The stack, the config and the generator are all unchanged; only the
+> hosted console is gone.
 
 > **Tight on resources?** There is also a **lite** single stack that trades OpenSearch content search
 > and the Grafana/OTEL telemetry for a footprint that fits a 0.25 vCPU / 1 GiB VM — see
@@ -24,24 +33,40 @@ runbook — [GCP](showcase-gcp.md) or [OCI](showcase-oci.md).
 
 ## What the configs assume
 
-Both configs use `auth.method: idp` and a **compressed decay clock**
-(`consolidation.unitsOfAgeInDays: 0.002`, ≈ one age-unit per three minutes) so forgetting,
-summarisation, and (for logs) capacity eviction all play out within a session rather than over real
-days. They differ where the two shapes differ:
+Every **console** config uses `auth.method: idp`, enables OpenSearch, and ships metrics/traces to
+`otel-lgtm` (the [lite stack](#a-lite-single-stack-e2-micro) is the exception on the last two).
+All of them **compress the decay clock** so forgetting, summarisation and capacity eviction play out
+within a session rather than over real days — but each compresses it by a different amount, because
+the five stores are fed at wildly different rates:
+
+| Config                | `unitsOfAgeInDays` | one age unit | `deletionThreshold` | Capacity target          |
+| --------------------- | ------------------ | ------------ | ------------------- | ------------------------ |
+| **book**              | 0.002              | ~3 min       | 5                   | uncapped                 |
+| **bluesky**           | 0.125              | 3 h          | 5                   | 850 KB / 1,600 memories  |
+| **agent** and `-flat` | 0.000138888889     | 12 s         | **0**               | 160 MB                   |
+| **observer**          | 0.02               | ~29 min      | 50                  | 8 MB                     |
+| **logs** (retired)    | 0.002              | ~3 min       | 5                   | 200 MB / 50,000 memories |
+
+They differ beyond the clock where the shapes differ:
 
 - **book** enables summarisation (`summarisationMinMemories: 20`, `summarisationMinAgeInDays: 0`) and
   leaves capacity uncapped — the store is small and purged each day.
-- **logs** disables summarisation and caps the store (`capacityBytes`/`capacityMemories`) so eviction
-  keeps the ever-growing trickle bounded.
 - **book** also enables **semantic search** (`llm.embedding`), so the console's search tab offers
   keyword, semantic, and hybrid modes. See [Semantic search](#semantic-search) below for why it
-  rides with the book example and not the logs one.
+  rides with the book example and not the others.
 - **bluesky** enables summarisation too, and is the only one that performs it **itself**
   (`llm.enabled` + `llm.autoSummarise`): the book example's summaries are written by its
   generator, which bluesky has no equivalent of. See
   [Auto-summarisation](#auto-summarisation-bluesky) below.
-
-Both enable OpenSearch and ship metrics/traces to `otel-lgtm` by default.
+- **agent** and **agent-flat** set `deletionThreshold: 0`, which switches value-based consolidation
+  off entirely and leaves the **capacity target as the only thing that forgets**. The pair is the one
+  comparison here with a control, so see [the agent pair](#the-agent-pair--one-workload-two-stores);
+  the two configs are byte-identical apart from their OpenSearch index name.
+- **observer** is the only one with `callbacks.enabled`, POSTing what it forgets to a deliberately
+  trivial receiver — see
+  [the callback queue](#the-callback-queue--the-push-half-of-forgetting).
+- **logs** disables summarisation and caps the store (`capacityBytes`/`capacityMemories`) so eviction
+  keeps the ever-growing trickle bounded.
 
 > **The LLM keys are `llm.*`, which the service has spoken since 0.43.0.** The old name was
 > `ollama.*`, still honoured as a deprecated alias by the binary but no longer used here. This
@@ -155,10 +180,13 @@ A ready-to-import realm lives at
 
 - realm roles `reader` / `writer` / `admin` (mapped straight onto Hippocampus's tiers);
 - a **public SPA client** `hippocampus-console` (Authorisation Code + PKCE, no secret) for the `/ui`
-  console — set its `redirectUris` to your console URLs (the file ships localhost plus
-  `https://book.hippocampus.example/ui` / `https://logs.hippocampus.example/ui` placeholders);
+  console — set its `redirectUris` to your console URLs (the file ships localhost plus one
+  `https://<console>.hippocampus.example/ui` placeholder per console);
 - a **confidential client** `hippocampus-gen` (client-credentials, `serviceAccountsEnabled`) with the
-  `admin` role, for the generators — **change its `secret`** before deploying;
+  `admin` role, for the generators, plus one `writer` client per Bluesky bridge
+  (`hippocampus-bluesky-bridge`, `…-worldnews` — separate because the console's Deployment tab draws
+  an inbound component per `client_id`, so one shared client would merge them into a single node) —
+  **change every `secret`** before deploying;
 - a single demo user `demo` (password `demo`) so visitors who sign in to a console can
   **browse but not mutate** — the showcase is read-only for people, and all writing is done by the
   `hippocampus-gen` service account. The `writer`/`admin` roles are still defined (the generator uses
@@ -242,9 +270,14 @@ The generators authenticate to Auth0 with the same flags plus `--oidc-audience <
 
 ## Running the stacks
 
-Each stack is a self-contained compose project: hippocampus (Postgres + OpenSearch), a Keycloak IdP,
-and the otel-lgtm telemetry stack, all behind **Caddy**, which terminates TLS (automatic Let's
-Encrypt) and routes by hostname. The two stacks are independent and run side by side on one host.
+Each compose file here is a self-contained project: one or more hippocampus services (Postgres +
+OpenSearch), a Keycloak IdP, and the otel-lgtm telemetry stack, all behind **Caddy**, which
+terminates TLS (automatic Let's Encrypt) and routes by hostname. The **combined** stack is the one
+that is hosted, and the one to reach for — five consoles sharing a single Caddy, Keycloak, Grafana,
+Postgres and OpenSearch (see [Every console on one
+domain](#every-console-on-one-domain-the-combined-stack)). The single-console **book** and **logs**
+files run the same servers with a proxy and an identity provider each, which is the arrangement the
+per-cloud runbooks describe.
 
 ### The split-issuer fix
 
@@ -265,8 +298,8 @@ Point DNS A/AAAA records for `${DOMAIN}`, `auth.${DOMAIN}`, and `grafana.${DOMAI
 ports 80 and 443, then before first run **change the two demo secrets**: Keycloak's admin password
 and the `hippocampus-gen` client `secret` in
 [`showcase/keycloak/realm-hippocampus.json`](../showcase/keycloak/realm-hippocampus.json) (the realm's
-console `redirectUris` already list `https://book.hippocampus.example/ui` /
-`https://logs.hippocampus.example/ui` — change these to your domains too).
+console `redirectUris` already list a `https://<console>.hippocampus.example/ui` placeholder per
+console — change these to your domains too).
 
 > **The realm is imported only on first boot.** Keycloak runs `start-dev --import-realm`, which
 > imports [`realm-hippocampus.json`](../showcase/keycloak/realm-hippocampus.json) only into an **empty**
@@ -573,12 +606,13 @@ its own.
 ### Drive it with the generators
 
 The generators ship as published container images —
-`ghcr.io/fastbean-au/hippocampus-gen-{book,logs,random}:latest`, built by the
+`ghcr.io/fastbean-au/hippocampus-gen-{book,logs,agent,observer,random}:latest`, built by the
 [`hippocampus-gen`](https://github.com/fastbean-au/hippocampus-gen) repo's CI. The
-[combined stack](#both-examples-on-one-domain-a-single-merged-stack) runs the `book` and `logs`
-images **as services**, so it is self-driving with no extra step (see below). For the standalone
-`book`/`logs` stacks above, run the matching image against the published gRPC port, authenticating to
-Keycloak as the `hippocampus-gen` client (admin tier — the book path calls `Purge`/`Sleep`):
+[combined stack](#every-console-on-one-domain-the-combined-stack) runs the `book`, `agent` and
+`observer` images **as services** (the bluesky console is fed by the bridges instead, which come from
+the hippocampus repo), so it is self-driving with no extra step. For the standalone `book`/`logs`
+stacks above, run the matching image against the published gRPC port, authenticating to Keycloak as
+the `hippocampus-gen` client (admin tier — the book path calls `Purge`/`Sleep`):
 
 ```sh
 # book: reload + summarise every 24h, spread across 2h, ageing live
@@ -596,17 +630,18 @@ podman run --rm ghcr.io/fastbean-au/hippocampus-gen-logs:latest -s <vm>:50052 --
 The book generator's `--reset` purges the store at the start of every cycle, and its first cycle runs
 immediately — so a fresh start clears any existing events and memories before loading.
 
-### Both examples on one domain (a single merged stack)
+### Every console on one domain (the combined stack)
 
-The book and logs compose files above each ship their _own_ Caddy binding `:80`/`:443` and their own
-Keycloak on an `auth.` subdomain — two of everything, across two domains. When you want **both
-examples under one parent domain on one host**, the merged stack
+The single-console compose files above each ship their _own_ Caddy binding `:80`/`:443` and their own
+Keycloak on an `auth.` subdomain — a full set of everything per console, across a domain each. That
+does not scale past two, so the hosted showcase runs the combined stack
 [`showcase/compose.showcase-combined.yaml`](../showcase/compose.showcase-combined.yaml)
-(Caddyfile [`showcase/caddy/Caddyfile.combined`](../showcase/caddy/Caddyfile.combined)) folds them into a
-single compose project: **one Caddy** (two Caddys cannot share the host ports), **one shared
-Keycloak**, **one shared Grafana**, and **one shared pair of data stores** — a single Postgres (a
-database per example) and a single OpenSearch (an index per example), so the merged host runs one of
-each rather than a pair. Everything hangs off a single `BASE_DOMAIN`:
+(Caddyfile [`showcase/caddy/Caddyfile.combined`](../showcase/caddy/Caddyfile.combined)), which folds
+**all five consoles** into a single compose project: **one Caddy** (two Caddys cannot share the host
+ports), **one shared Keycloak**, **one shared Grafana**, and **one shared pair of data stores** — a
+single Postgres (a database per console) and a single OpenSearch (an index per console), so the host
+runs one of each rather than five. The landing site and the configuration builder ride on it too.
+Everything hangs off a single `BASE_DOMAIN`:
 
 ```sh
 BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
@@ -660,18 +695,18 @@ Why this works with no config-file changes:
 
 - **Shared Keycloak, one issuer.** Both services set
   `HIPPOCAMPUS_AUTH_ISSUER`/`_UI_ISSUER` to `https://auth.${BASE_DOMAIN}/realms/hippocampus`, and the
-  shipped realm's console client already lists **both** `book.`/`logs.` `/ui` redirect URIs and one
-  `hippocampus-gen` client — so a single Keycloak covers both. The [split-issuer](#the-split-issuer-fix)
+  shipped realm's console client already lists **every** console's `/ui` redirect URI and one
+  `hippocampus-gen` client — so a single Keycloak covers them all. The [split-issuer](#the-split-issuer-fix)
   Caddy alias for `auth.${BASE_DOMAIN}` is what lets the containers reach it at the browser's URL.
-- **Shared stores, isolated data, reused configs.** Both examples share one Postgres and one
-  OpenSearch container, but stay logically isolated: the shared Postgres hosts a database per example
-  (`hippocampus_book` / `hippocampus_logs`, created on first boot by
+- **Shared stores, isolated data, reused configs.** All five consoles share one Postgres and one
+  OpenSearch container, but stay logically isolated: the shared Postgres hosts a database per console
+  (`hippocampus_book` / `_bluesky` / `_agent` / `_agent_flat` / `_observer`, created on first boot by
   [`postgres/init-showcase-combined.sql`](../showcase/postgres/init-showcase-combined.sql)) and each
-  service uses its own OpenSearch index (`book-memories` / `logs-memories`). Separate databases keep
+  service uses its own OpenSearch index (`book-memories`, `bluesky-memories`, and so on). Separate
+  databases keep
   each consolidating instance's [single-consolidator](https://github.com/fastbean-au/hippocampus/blob/main/README.md#horizontal-scaling) advisory
-  lock from colliding; a shared cluster is otherwise fine. So
-  [`config.showcase-book.json`](../showcase/config.showcase-book.json) and
-  [`…-logs.json`](../showcase/config.showcase-logs.json) are still reused **verbatim** — the per-example
+  lock from colliding; a shared cluster is otherwise fine. So each
+  [`config.showcase-*.json`](../showcase/) is still reused **verbatim** — the per-console
   DSN database name and index name are supplied as `HIPPOCAMPUS_STORAGE_POSTGRES_DSN` /
   `HIPPOCAMPUS_OPENSEARCH_INDEX` env overrides rather than by editing the configs.
 
@@ -818,14 +853,14 @@ sudo ./showcase/uninstall-ubuntu.sh
 ```
 
 > **Shared identity is the trade-off.** One realm means one set of users and one signing key across
-> both examples, so a token minted by signing in to the book console is also accepted by the logs
-> service. That is fine for a demo; if you need the two examples to be security-isolated, keep the two
-> separate stacks (and two domains) instead.
+> every console, so a token minted by signing in to the book console is also accepted by the agent
+> service. That is fine for a demo; if you need consoles to be security-isolated, run the
+> single-console stacks (and a domain each) instead.
 
 ### A lite single stack (e2-micro)
 
-The book/logs stacks each run Postgres + OpenSearch + Keycloak + otel-lgtm behind Caddy — together
-they want ~10 GiB of RAM. When that is too much (a single tiny VM, a throwaway demo), the **lite
+The combined and single-console stacks all run Postgres + OpenSearch + Keycloak + otel-lgtm behind
+Caddy — together with the models and the generators, that wants ~10 GiB of RAM. When that is too much (a single tiny VM, a throwaway demo), the **lite
 stack** [`showcase/compose.showcase-lite.yaml`](../showcase/compose.showcase-lite.yaml)
 (config [`showcase/config.showcase-lite.json`](../showcase/config.showcase-lite.json)) strips it to two
 containers — hippocampus on **SQLite** plus Caddy — and moves auth to **hosted [Auth0](#auth0-saas)**,

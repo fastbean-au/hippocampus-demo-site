@@ -134,9 +134,39 @@ sudo ./showcase/deploy-caddy.sh
 
 # Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000
+
+# Hold every copy of the combined stack's console list to the Caddyfile. Reads files only - no host,
+# no containers - so it is safe anywhere, and it is worth running before a deploy and after any
+# change that adds or retires a console. See "The console list is written down seven times" below.
+./showcase/check-consistency.sh
 ```
 
-There is no test suite.
+There is no test suite; `showcase/check-consistency.sh` is the one check.
+
+## The console list is written down seven times
+
+Which consoles the combined stack serves is recorded independently in the Caddyfile (the site
+blocks), the compose file (the services, their published gRPC ports and the Caddy network aliases),
+`postgres/init-showcase-combined.sql` (a database each), `keycloak/realm-hippocampus.json` (a console
+redirect URI each), `docs/showcase.md` (the subdomain table), `install-ubuntu.sh` (the DNS
+instruction it prints when it finishes) and `deploy-servers.sh` (what it can move onto a new image).
+Nothing executes any of the others, and **adding or retiring a console means editing all seven.**
+
+That is not hypothetical: when the `logs` console was retired on 2026-08-27 five of the seven went on
+describing it, and the DNS instruction `install-ubuntu.sh` prints named a console that no longer
+existed while omitting four that did — so a fresh install following it would have left
+bluesky/agent/agent-flat/observer with no certificates, and nothing would have said so until a
+browser refused the connection.
+
+`showcase/check-consistency.sh` holds them together. **The Caddyfile is the authority**, because it
+is the only one of the seven a visitor's request actually passes through. It checks in **both**
+directions, because the two failures are different in kind: a console missing from a copy is a
+console that half-works, while a console named by a copy but served by nobody is the `logs` case.
+Run against the repo as it stood before the guard was written, it reports six disagreements.
+
+What it deliberately does **not** cover is prose — the introduction of `docs/showcase.md` described a
+"two independent stacks" deployment for two weeks after it stopped being one, and no structural check
+can see that. Prose is a review problem; the seven lists are not.
 
 ## Deployment architecture (the important part)
 

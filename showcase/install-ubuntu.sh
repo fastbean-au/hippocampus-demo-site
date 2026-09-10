@@ -26,8 +26,9 @@
 #     --acme-email  you@example.com
 #
 # Options:
-#   --base-domain <domain>   Parent domain for the showcase. The apex plus the book./logs./auth./
-#                            grafana./config-builder. subdomains must have DNS A/AAAA records
+#   --base-domain <domain>   Parent domain for the showcase. The apex plus the book./bluesky./agent./
+#                            agent-flat./observer./auth./grafana./config-builder. subdomains must
+#                            have DNS A/AAAA records
 #                            pointing at this host,
 #                            with ports 80/443 reachable, for Caddy's automatic HTTPS. Also rendered
 #                            into the Keycloak realm's console redirect URIs so sign-in works.
@@ -269,7 +270,8 @@ apt-get install -y --no-install-recommends podman podman-compose
 # Render the Keycloak realm from the tracked template, substituting two things so the running stack
 # never drifts from the realm:
 #
-#   1. The base domain. The template ships placeholder redirect URIs (bluesky./book./logs.hippocampus.example);
+#   1. The base domain. The template ships placeholder redirect URIs (one per console, on
+#      hippocampus.example);
 #      Keycloak rejects a sign-in whose redirect_uri is not listed ("Invalid parameter:
 #      redirect_uri"), so the real BASE_DOMAIN is substituted in. The 'admin@example.com' style ACME
 #      default and the realm name 'hippocampus' contain no 'hippocampus.example', so the replace only
@@ -440,8 +442,11 @@ cat <<EOF
 The showcase is starting and will come back up on reboot. Point DNS for these names at this host,
 with 80/443 reachable, for Caddy to provision TLS:
 
-  ${BASE_DOMAIN}, book.${BASE_DOMAIN}, logs.${BASE_DOMAIN}, auth.${BASE_DOMAIN}, grafana.${BASE_DOMAIN},
+  ${BASE_DOMAIN}, book.${BASE_DOMAIN}, bluesky.${BASE_DOMAIN}, agent.${BASE_DOMAIN},
+  agent-flat.${BASE_DOMAIN}, observer.${BASE_DOMAIN}, auth.${BASE_DOMAIN}, grafana.${BASE_DOMAIN},
   config-builder.${BASE_DOMAIN}
+
+(or a single *.${BASE_DOMAIN} wildcard)
 
 Handy commands:
 

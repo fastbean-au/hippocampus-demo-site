@@ -1,49 +1,60 @@
-# Hosted showcase, BOTH examples under ONE domain, on ONE host. This merges the separate book and
-# logs stacks into a single compose project so that a single Caddy owns :80/:443 (two Caddys cannot),
-# fronting both consoles plus a SHARED Keycloak and a SHARED Grafana. It is the consolidated
-# counterpart to compose.showcase-book.yaml + compose.showcase-logs.yaml — same server
-# side, same split-issuer design, but one front proxy and one identity provider instead of two.
+# Hosted showcase, EVERY console under ONE domain, on ONE host. This is the stack that is actually
+# hosted: five hippocampus services in a single compose project so that a single Caddy owns :80/:443
+# (two Caddys cannot), fronting all of them plus a SHARED Keycloak and a SHARED Grafana. It is the
+# consolidated counterpart to the single-console compose.showcase-book.yaml /
+# compose.showcase-logs.yaml — same server side, same split-issuer design, but one front proxy and
+# one identity provider instead of a set per console.
 #
 #   BASE_DOMAIN=hippocampus.example ACME_EMAIL=you@example.com \
 #     podman compose -f showcase/compose.showcase-combined.yaml up --build -d
 #
-# Everything hangs off ONE parent domain via four subdomains (defaults in parentheses):
-#   book console:  https://book.${BASE_DOMAIN}/ui       (book.hippocampus.example)
-#   logs console:  https://logs.${BASE_DOMAIN}/ui       (logs.hippocampus.example)
-#   keycloak:      https://auth.${BASE_DOMAIN}/         (auth.hippocampus.example) — SHARED by both
-#   grafana:       https://grafana.${BASE_DOMAIN}/      (grafana.hippocampus.example) — SHARED by both
+# Everything hangs off ONE parent domain via nine names (defaults in parentheses):
+#   landing site:   https://${BASE_DOMAIN}/               (hippocampus.example) — the apex
+#   book console:   https://book.${BASE_DOMAIN}/ui        (book.hippocampus.example)
+#   bluesky console: https://bluesky.${BASE_DOMAIN}/ui    (bluesky.hippocampus.example)
+#   agent console:  https://agent.${BASE_DOMAIN}/ui       (agent.hippocampus.example)
+#   its flat twin:  https://agent-flat.${BASE_DOMAIN}/ui  (agent-flat.hippocampus.example)
+#   observer console: https://observer.${BASE_DOMAIN}/ui  (observer.hippocampus.example)
+#   keycloak:       https://auth.${BASE_DOMAIN}/          (auth.hippocampus.example) — SHARED by all
+#   grafana:        https://grafana.${BASE_DOMAIN}/       (grafana.hippocampus.example) — SHARED by all
 #   config builder: https://config-builder.${BASE_DOMAIN}/ (config-builder.hippocampus.example)
-#   gRPC:          <vm>:50051 (book), <vm>:50052 (logs) — published for optional external tooling
-#                  (the in-stack generators reach the services by name, not via these ports)
+#   gRPC:          <vm>:50051 (book), :50053 (bluesky), :50054 (agent), :50055 (agent-flat),
+#                  :50056 (observer) — published for optional external tooling (the in-stack
+#                  generators reach the services by name, not via these ports)
 #
-# Point DNS A/AAAA records for those five names (or a single *.${BASE_DOMAIN} wildcard) at the host,
+# A `logs` console was retired from this stack on 2026-08-27, once the agent pair began showing the
+# same thing with a control to compare against. compose.showcase-logs.yaml still runs it standalone.
+#
+# Point DNS A/AAAA records for those nine names (or a single *.${BASE_DOMAIN} wildcard) at the host,
 # with 80/443 reachable for the ACME challenge.
 #
 # THE SPLIT-ISSUER FIX (see Caddyfile.book for the full rationale): Caddy joins the `shared` network
-# carrying auth.${BASE_DOMAIN} as an alias, so BOTH hippocampus containers resolve the issuer host to
+# carrying auth.${BASE_DOMAIN} as an alias, so EVERY hippocampus container resolves the issuer host to
 # Caddy and reach Keycloak at exactly the URL the browser uses. HIPPOCAMPUS_AUTH_ISSUER is therefore
 # the same public https URL on both sides.
 #
 # SHARED KEYCLOAK: one realm (showcase/keycloak/realm-hippocampus.json) already defines the console
-# client with BOTH console redirect URIs and one hippocampus-gen client, so a single Keycloak serves
-# both examples. A token from either console is valid at either service (shared identity) — fine for a
+# client with EVERY console's redirect URI and one hippocampus-gen client, so a single Keycloak serves
+# them all. A token from any console is valid at every service (shared identity) — fine for a
 # demo. The tracked realm's redirect URIs use the placeholder BASE_DOMAIN (hippocampus.example); for a
 # real domain install-ubuntu.sh renders a copy with BASE_DOMAIN substituted in and mounts it via
 # KEYCLOAK_REALM_FILE (a hand run would otherwise 400 with "Invalid parameter: redirect_uri"). Still
 # change the demo secrets (Postgres, Keycloak admin, the gen client secret) for anything real.
 #
-# The book/logs data stores SHARE one Postgres and one OpenSearch container (unlike the standalone
-# stacks, which run a pair of each) but stay logically ISOLATED: the shared Postgres hosts two
-# databases (`hippocampus_book` / `hippocampus_logs`, created by postgres/init-showcase-combined.sql
-# on first boot) and each service uses its own OpenSearch index (`book-memories` / `logs-memories`).
-# The two configs (config.showcase-book.json / config.showcase-logs.json) are still reused VERBATIM
+# The five data stores SHARE one Postgres and one OpenSearch container (unlike the standalone
+# stacks, which run a pair of each) but stay logically ISOLATED: the shared Postgres hosts one
+# database per console (`hippocampus_book` / `_bluesky` / `_agent` / `_agent_flat` / `_observer`,
+# created by postgres/init-showcase-combined.sql on first boot) and each service uses its own
+# OpenSearch index (`book-memories`, `bluesky-memories`, and so on).
+# The configs (config.showcase-*.json) are still reused VERBATIM
 # and shared with the standalone stacks, so the per-tenant DSN database name and index name are
 # supplied here as HIPPOCAMPUS_STORAGE_POSTGRES_DSN / HIPPOCAMPUS_OPENSEARCH_INDEX env overrides
 # rather than by editing the configs. Separate databases are what keep the single-consolidator
 # advisory lock from colliding (see postgres/init-showcase-combined.sql); a shared cluster is fine.
 #
 # The data generators now run as CONTAINERS in this stack (the published
-# ghcr.io/fastbean-au/hippocampus-gen-{book,logs} images), so a single `up -d` brings up a fully
+# ghcr.io/fastbean-au/hippocampus-gen-{book,agent,observer} images, plus the two bluesky bridges from
+# the hippocampus repo), so a single `up -d` brings up a fully
 # self-driving showcase - the servers AND the load that feeds them. Each runs as the hippocampus-gen
 # client (client-credentials, admin role) against the SHARED issuer
 # https://auth.${BASE_DOMAIN}/realms/hippocampus, reaching both the issuer (via the Caddy alias) and
@@ -82,7 +93,6 @@ services:
       shared:
         aliases:
           - "book.${BASE_DOMAIN:-hippocampus.example}"
-          - "logs.${BASE_DOMAIN:-hippocampus.example}"
           - "auth.${BASE_DOMAIN:-hippocampus.example}"
           - "grafana.${BASE_DOMAIN:-hippocampus.example}"
     # NOTE: hippocampus-site is deliberately NOT a depends_on here. Caddy tolerates a down apex (the
@@ -688,7 +698,7 @@ services:
       POSTGRES_DB: hippocampus
     volumes:
       - combined-postgres-data:/var/lib/postgresql/data
-      # Creates hippocampus_book / hippocampus_logs on first boot (empty-volume init only).
+      # Creates one database per console on first boot (empty-volume init only).
       - ./postgres/init-showcase-combined.sql:/docker-entrypoint-initdb.d/init-showcase-combined.sql:ro
     networks:
       - data
@@ -773,7 +783,7 @@ services:
       retries: 60
       start_period: 30s
 
-  # ---- shared identity provider (one realm, both consoles) ----------------------------------------
+  # ---- shared identity provider (one realm, every console) ----------------------------------------
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped

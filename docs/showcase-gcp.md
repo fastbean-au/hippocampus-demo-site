@@ -26,7 +26,7 @@ this only covers the VM.
 > entirely** (and you don't need Go from [step 4](#4-install-podman)). On a fresh Ubuntu 24.04
 > host, [`showcase/install-ubuntu.sh`](../showcase/install-ubuntu.sh) does steps 4–7 in one shot
 > (installs Podman, records the domain/email, and registers a boot systemd unit). See
-> [Both examples on one domain](showcase.md#both-examples-on-one-domain-a-single-merged-stack).
+> [Every console on one domain](showcase.md#every-console-on-one-domain-the-combined-stack).
 
 ## 1. Sizing
 
