@@ -88,7 +88,7 @@ services:
       retries: 12
 
   opensearch:
-    image: opensearchproject/opensearch:3.1.0
+    image: opensearchproject/opensearch:3.8.0
     restart: unless-stopped
     environment:
       discovery.type: single-node
@@ -138,7 +138,7 @@ services:
       start_period: 30s
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.7
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
