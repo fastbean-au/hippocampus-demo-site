@@ -28,6 +28,7 @@
     "keyFile": ""
   },
   "observability": {
+    "serviceName": "hippocampus-agent",
     "tracing": {
       "enabled": true,
       "samplingRatio": 1.0

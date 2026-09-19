@@ -28,6 +28,7 @@
     "keyFile": ""
   },
   "observability": {
+    "serviceName": "hippocampus-book",
     "tracing": {
       "enabled": true,
       "samplingRatio": 1.0

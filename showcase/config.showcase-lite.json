@@ -29,6 +29,7 @@
     "keyFile": ""
   },
   "observability": {
+    "serviceName": "hippocampus-lite",
     "tracing": {
       "enabled": false,
       "samplingRatio": 1.0
