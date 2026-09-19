@@ -1,5 +1,8 @@
 # hippocampus-demo-site
 
+![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen)
+[![Known Vulnerabilities](https://snyk.io/test/github/fastbean-au/hippocampus-demo-site/badge.svg)](https://snyk.io/test/github/fastbean-au/hippocampus-demo-site)
+
 The public demo for [Hippocampus](https://github.com/fastbean-au/hippocampus). This repo holds two
 pieces:
 

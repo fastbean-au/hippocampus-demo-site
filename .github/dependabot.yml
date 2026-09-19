@@ -1,0 +1,42 @@
+# Dependabot configuration.
+#
+# Version updates require this file; security updates run from the repository's settings and do
+# not. This repository ships no code and no package manifest, so until this file was added
+# Dependabot had nothing to look at here at all - and what it actually needs to watch is the one
+# thing a security update never covers: a set of PINNED CONTAINER IMAGES that the public demo runs
+# on and nothing else bumps.
+#
+# The docker entry covers the landing page's `Containerfile` (Dependabot's docker file fetcher
+# matches `containerfile` as well as `dockerfile`, so the file does not have to be renamed).
+#
+# The docker-compose entry covers `showcase/`, which is where the pins that matter live:
+# `postgres:17-alpine`, `opensearchproject/opensearch:3.1.0` and `quay.io/keycloak/keycloak:26.0`.
+# Those three are the demo's dependencies in every sense that matters and none of them is visible
+# to any other tool in this family. The `ghcr.io/fastbean-au/*` services float `:latest` and are
+# published by the service's own release workflow, so Dependabot has nothing to say about them.
+#
+# READ A KEYCLOAK BUMP CAREFULLY. The showcase imports a realm at startup, and a realm that the
+# running Keycloak rejects does not degrade - it crash-loops the container and takes the showcase
+# apex down with it. A major bump here is a change to the demo, not a dependency refresh.
+#
+# NO github-actions ENTRY, deliberately: this repository has no workflows. Add one with the first.
+version: 2
+
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      base-images:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/showcase"
+    schedule:
+      interval: "weekly"
+    groups:
+      showcase-images:
+        patterns:
+          - "*"
