@@ -690,7 +690,7 @@ services:
   # ---- shared data stores (one Postgres with a database per tenant, one OpenSearch with an index
   #      per tenant); the book/logs services reach these by service name over the `data` network ----
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: hippocampus
