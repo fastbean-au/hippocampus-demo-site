@@ -676,6 +676,23 @@ straight at `grafana.${BASE_DOMAIN}` — which opens on that dashboard, Grafana'
 a button home. The tracked dashboard ships `"links": []`, so a hand run, and the standalone book/logs
 stacks that have no landing page, get no link rather than a dead one.
 
+Grafana **alerts** as well as draws. `observability/alerting-rules.yaml` is mounted into its
+provisioning tree, so the project's shipped alert rules — the ones the hippocampus repo's
+`deploy/observability/README.md` tables — actually evaluate here, under _Alerting > Alert rules_. No
+contact point is provisioned (there is nowhere to send them), so they surface in the UI rather than
+notifying. That file is a **byte-for-byte copy** of the hippocampus repo's
+`deploy/compose/observability/alerting-rules.yaml`, so keeping it current is a `cp` and checking it
+is a `diff`; re-copy it after a release that touches the rules.
+
+Standing this up is what found the rules' aggregation bug. They used to aggregate with a bare
+`sum()`/`max()` over the whole datasource — right for one store with replicas, which is the topology
+they were written for, and wrong here, where five independent stores share one collector. It was not
+the dilution the rule files described but genuine cross-wiring:
+`HippocampusStoreDiskFarAboveEstimate` evaluated to `agent`'s disk over `agent-flat`'s used bytes, a
+ratio belonging to neither store. Every rule now aggregates `by (service_name)`, which is why
+[`observability.serviceName`](../showcase/config.showcase-agent.json) is set per instance here — an
+unset one falls back to `hippocampus` and merges the five back together.
+
 The **config builder** is the odd one out: not a demo instance but a tool. It is the
 `ghcr.io/fastbean-au/hippocampus-config-wizard` image — a static single-page app (source:
 `cmd/config-wizard` in the [hippocampus](https://github.com/fastbean-au/hippocampus) repo) that walks

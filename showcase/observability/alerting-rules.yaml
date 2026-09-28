@@ -1,0 +1,1324 @@
+# Grafana alert-rule provisioning for the bundled otel-lgtm image, the sibling of
+# dashboards-provider.yaml: mounted into the image's provisioning tree so the demo stack alerts as
+# well as draws. See docker-compose.yaml (the `otel-lgtm` service under the `observability`
+# profile) and demo/run.sh.
+#
+# These are the same rules as deploy/observability/prometheus-alerts.yaml, which is the file to use
+# for a real deployment - this one exists because Grafana provisions Grafana-managed rules in its
+# own format and cannot read a Prometheus rule file. The PromQL and the `for:` durations are
+# byte-identical between the two, and cmd/hippocampus/alerts_test.go fails if they drift.
+#
+# There are two groups, matching the two in that file: `hippocampus` is the service, and
+# `hippocampus-clients` is the components that dial it - the broker bridges and the ingestor, which
+# publish their own metrics from their own processes.
+#
+# Every expression aggregates `by (service_name)` - observability.serviceName, the OTEL service.name
+# the process reports itself under, which names the STORE rather than the process: replicas of one
+# store share a name and re-aggregate into one alert, while separate stores sharing this collector
+# stay separate. Give each store its own observability.serviceName, or these will name the wrong
+# one. See the sibling file's header for what the un-grouped form was measured doing.
+#
+# Each rule is one instant query plus a threshold of `gt 0`, because the comparison lives in the
+# PromQL itself (exactly as Prometheus evaluates it): the query returns a value only while the
+# alert should fire, and nothing otherwise - which is why noDataState is OK on every rule. That
+# keeps the two engines' behaviour the same, including for absence, which the one rule that cares
+# about it expresses with absent_over_time rather than by leaning on a no-data policy. The threshold
+# is why every expression must return a POSITIVE number while firing: a rule whose firing value is
+# zero is correct in Prometheus and silent here (see HippocampusBridgeNotConsuming).
+#
+# No contact point or notification policy is provisioned: where alerts should be delivered is
+# deployment-specific, and the demo stack has nowhere to send them. Firing rules are visible in
+# Grafana under Alerting > Alert rules. To notify, add a contact point (and a route) under
+# /otel-lgtm/grafana/conf/provisioning/alerting/ alongside this file.
+
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: hippocampus
+    folder: Hippocampus
+    interval: 1m
+    rules:
+      - uid: hippocampus-server-error-rate
+        title: HippocampusServerErrorRateHigh
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is failing more than 1% of requests"
+          description: "Over 1% of RPCs are returning a server-fault code across both transports. Client faults (bad arguments, missing ids, rejected tokens) are excluded, so this is the service itself. Break it down by rpc and code on the Hippocampus dashboard's Failures by RPC and code panel, then check the service logs - a failing RPC logs at Warn with its method, code, and error."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#request-metrics-red"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_rpc_requests_total{outcome="server_error"}[5m])) / clamp_min(sum by (service_name) (rate(hippocampus_rpc_requests_total[5m])), 0.001) > 0.01
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-request-latency
+        title: HippocampusRequestLatencyHigh
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus p95 request latency is above 1s"
+          description: "The 95th percentile of the interactive RPCs (long-running admin and bulk-transfer calls are excluded) has been above one second. On the server drivers check the connection pool and storage.queryTimeoutSeconds; on sqlite check whether a sleep cycle or a preview is contending for the single connection. The dashboard's p95 duration by RPC panel names the call."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#request-metrics-red"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: histogram_quantile(0.95, sum by (le, service_name) (rate(hippocampus_rpc_duration_seconds_bucket{rpc!~"Sleep|Purge|Export|Import|ImportBatch|Transfer|Clear|PreviewConsolidation|SummariseMemories"}[5m]))) > 1
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-sleep-cycle-failing
+        title: HippocampusSleepCycleFailing
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus sleep cycles are failing"
+          description: "Consolidation has been failing for at least 15 minutes, so nothing is being forgotten and the store is now unbounded. The cycle logs the failing pass; the usual causes are a database error, a store made unreachable mid-cycle, or a cycle exceeding storage.queryTimeoutSeconds on a store that has outgrown it."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_sleeps_total{success="false"}[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-consolidator-absent
+        title: HippocampusConsolidatorAbsent
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus store has completed no sleep cycle in an hour"
+          description: "No successful consolidation has been reported for this store in an hour, which usually means the consolidating instance is gone rather than slow - on postgres/mysql, most often the instance-lock keepalive exiting because the lock session died. The alert names the store through its service_name label, which is observability.serviceName. Confirm exactly one instance is running against it with consolidation.enabled: true, and that its sleep.periodSeconds is below this rule's window."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#the-instance-lock-keepalive-server-drivers"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 4200
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: count by (service_name) (sum by (service_name) (increase(hippocampus_sleeps_total{success="true"}[1h])) == 0) > 0 or absent_over_time(hippocampus_sleeps_total{success="true"}[1h])
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-store-growing
+        title: HippocampusStoreGrowing
+        condition: B
+        for: 6h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is storing faster than it is forgetting"
+          description: "Memories have been arriving faster than consolidation and eviction remove them for six hours, so the store is growing. On a decay-only deployment (no consolidation.capacityBytes or capacityMemories) that is the only signal there is, since capacity pressure cannot rise - either the decay settings are too weak for the write rate (raise consolidation.deletionThreshold or aggressiveness, or lower unitsOfAgeInDays), or set a capacity target if the store's size needs a bound rather than an equilibrium. Watch hippocampus_used_bytes for the trend."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#decay-only-no-capacity-target-at-all"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_memories_stored_total[1h])) > sum by (service_name) (rate(hippocampus_memories_consolidated_total[1h]) or rate(hippocampus_memories_evicted_total[1h]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-capacity-pressure
+        title: HippocampusCapacityPressureHigh
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is running near its capacity target"
+          description: "Capacity pressure has been sustained near or above the configured target, so the decay threshold is being scaled up and memories are being forgotten sooner than the decay settings alone would forget them. Either raise consolidation.capacityBytes/capacityMemories, or accept the shorter retention. Note that the threshold maps to a different utilisation if consolidation.capacityPressureExponent is not 1."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_capacity_pressure) > 1.9
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-over-capacity
+        title: HippocampusStoreOverCapacity
+        condition: B
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is above its byte capacity target"
+          description: "The store has been over consolidation.capacityBytes for an hour, so eviction is running every cycle and is not winning. Either the write rate exceeds what one cycle can reclaim (shorten sleep.periodSeconds), or retention is holding the bytes down - check HippocampusRetentionNearCapacity and the retained_bytes series."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_used_bytes) > max by (service_name) (hippocampus_capacity_bytes)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-retention-near-capacity
+        title: HippocampusRetentionNearCapacity
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus retention is consuming its capacity target"
+          description: "Memories inside consolidation.minimumRetentionInDays now hold over 90% of consolidation.capacityBytes. Retention overrides the capacity target, so eviction will keep running, find nothing it is allowed to delete, and the store will grow past its target until that data ages out. Shorten minimumRetentionInDays, raise capacityBytes, or reduce the ingest rate."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_retained_bytes) / clamp_min(max by (service_name) (hippocampus_capacity_bytes), 1) > 0.9
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-ancillary-storage-high
+        title: HippocampusAncillaryStorageHigh
+        condition: B
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is spending storage its capacity target cannot see"
+          description: "The forgotten log, the search outbox and the callback queue now hold over a quarter of consolidation.capacityBytes between them, and none of it is counted by used_bytes or by capacity pressure - the exclusion is deliberate, so that the record of what was deleted can never evict live memories. The consequence is that the disk this deployment needs is capacityBytes PLUS this figure, and it is growing. Break it down by the component label: forgotten_log and search_outbox have fixed-width rows, so their row caps (consolidation.tombstones.maxRows, opensearch.outbox.maxRows) are effectively byte caps, while callback_queue rows carry a rendered payload - and memory bodies under callbacks.includeBodies - so callbacks.maxRows bounds its bytes only loosely and callbacks.maxBytes is what actually bounds it. Each of the three takes a maxBytes, unset by default; setting one trims the table rather than letting it grow, at the cost of discarding what is past the cap. A growing callback_queue means a receiver is down: check HippocampusCallbackQueueBacklog and HippocampusCallbackDeliveriesFailing. On the embedded driver all three share the store's own file, so this is disk the capacity target will never reclaim."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (hippocampus_ancillary_bytes) / clamp_min(max by (service_name) (hippocampus_capacity_bytes), 1) > 0.25
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      # The other direction: what the store's own accounting cannot see. used_bytes is a live-row
+      # estimate on the server drivers and has to stay one, so the estimate can be exactly right
+      # while the database is several times larger - a store that forgets is a store whose indexes
+      # bloat. Silent on SQLite and MySQL, which publish no disk_bytes.
+      - uid: hippocampus-store-disk-far-above-estimate
+        title: HippocampusStoreDiskFarAboveEstimate
+        condition: B
+        for: 6h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is holding several times the disk its own accounting counts"
+          description: "The tables inside consolidation.capacityBytes now occupy over four times what used_bytes estimates for them. That estimate is not wrong and must not be changed to a file-size measure: it describes a compacted store, and eviction driven by a reading that never drops after a delete would evict every cycle without the figure moving. The gap is space the engine has marked reusable and will not return - overwhelmingly index, since VACUUM never repacks a B-tree page a delete emptied. Break it down with hippocampus_index_bytes / hippocampus_index_entries by index: an entry costing more than a few hundred bytes over a 37-character id is air. The remedy is REINDEX INDEX CONCURRENTLY on the indexes that show it, which is online but is a maintenance decision the service deliberately does not take for itself. On a high-churn store it is a DAILY job, not an occasional one: a reindexed instance was measured back from 13 MB to 393 MB on one index in nine hours."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#index-bloat-on-the-server-drivers"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: "max by (service_name) (hippocampus_disk_bytes) / (max by (service_name) (hippocampus_used_bytes) > 0) > 4"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      # The per-index half, and the only one that says what to act on. The content index is excluded
+      # (its entries grow with the bodies they index, so its cost per entry has no right answer) and
+      # so are indexes under 500 entries, where a nearly empty B-tree divides into a large ratio
+      # that means nothing.
+      - uid: hippocampus-index-bloated
+        title: HippocampusIndexBloated
+        condition: B
+        for: 6h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus index is mostly empty pages"
+          description: "This index is spending over 512 bytes on each entry it holds, against a key of an id and a few numbers that should cost tens. The space is pages a delete emptied: VACUUM marks them reusable and never repacks them, and a store keyed on a UUID that forgets by design never refills one - so this grows with what the store has forgotten rather than with what it holds, and it is unbounded. It is not a large-store phenomenon: bloat tracks churn, and a store of a thousand memories was measured carrying a listing index 2.7 times the size of its own heap. Fix it with REINDEX INDEX CONCURRENTLY on the named index, which is online and takes seconds to minutes; there is no configuration change that prevents it and the service deliberately does not do it on a timer. Schedule it daily on a store under sustained write load."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#index-bloat-on-the-server-drivers"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: "max by (service_name, table, index) (hippocampus_index_bytes{table!=\"memories_fts\"} / (hippocampus_index_entries{table!=\"memories_fts\"} > 500)) > 512"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-rate-limit-rejecting
+        title: HippocampusRateLimitRejecting
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is rejecting more than one request per second on a rate limit"
+          description: "Requests are being refused with ResourceExhausted/429 by a configured rate limit. Break it down by the scope attribute to see which level is biting: global is the instance ceiling, client is one caller over its share, tier is a whole class of caller. Decide whether this is a caller to talk to or a limit to raise - and note that a global ceiling being hit affects every caller, including well-behaved ones."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#rate-limiting"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_ratelimit_rejected_total[5m])) > 1
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-search-index-dropping
+        title: HippocampusSearchIndexDropping
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is dropping search index operations"
+          description: "Index operations are being dropped, so the search index is going sparse and SearchMemories will miss memories that exist in the store until the reconciliation sweep heals them. Break it down by the reason label, because the two have unrelated remedies: apply_failed means the cluster refused or did not answer on every retry, so check its health first; queue_full means this service is offering work faster than one apply worker can drain it. For queue_full, compare hippocampus_search_queue_depth against hippocampus_search_queue_capacity - a queue that is spiky and near zero between bursts is one opensearch.queueSize can fix, while one pinned at capacity is being outrun and no size will help. hippocampus_search_documents_healed is what the sweep then has to write, and --backfill-search --reindex rebuilds the index outright."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#the-index-is-fed-by-a-queue-that-drops-and-that-is-the-design"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_search_dropped_total[10m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-search-outbox-backlog
+        title: HippocampusSearchOutboxBacklog
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus cannot apply index deletions as fast as it records them"
+          description: "Index deletions are being recorded in the outbox faster than they can be applied to the search index, so the index is holding documents for memories the store has already forgotten. Unlike a dropped index operation this is durable - nothing is lost, and the queue drains once the cluster keeps up - but the backlog costs disk and dilutes bm25 ranking until it does. Check the OpenSearch cluster's health. If the backlog reaches opensearch.outbox.maxRows or maxAgeHours the oldest entries are discarded to the reconciliation sweep."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_search_outbox_depth) > 10000
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-callback-queue-backlog
+        title: HippocampusCallbackQueueBacklog
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus cannot deliver callbacks as fast as it records them"
+          description: "Callback deliveries are being recorded faster than the receiver at callbacks.url accepts them, so the store is holding notifications about memories it has already forgotten. Nothing is lost yet - the queue is durable and drains once the receiver keeps up - but it is excluded from the capacity target, not from the disk. Check the receiver. If the backlog reaches callbacks.maxRows or maxAgeHours the oldest deliveries are discarded, and unlike a queued index deletion nothing recovers them."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_callbacks_queue_depth) > 10000
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-callback-deliveries-failing
+        title: HippocampusCallbackDeliveriesFailing
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus callback deliveries are being refused"
+          description: "The receiver at callbacks.url is refusing deliveries, or is unreachable. Each failure is deferred on an exponential backoff and retried, so nothing is lost while this fires - but the queue grows for as long as it lasts, and once it reaches callbacks.maxRows or maxAgeHours the oldest notifications are discarded permanently. Check the receiver's health and, if authentication is configured, that its token or signing secret still matches."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_callbacks_delivered_total{outcome="failed"}[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-callbacks-abandoning
+        title: HippocampusCallbacksAbandoning
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is discarding undelivered callbacks"
+          description: "The callback queue has hit its caps and is discarding deliveries the receiver never accepted. These notifications are lost: nothing re-derives them, because the memories they describe are already gone. This means the receiver has been unreachable for long enough to exhaust callbacks.maxAgeHours or maxRows - treat it as a receiver outage, not as tuning, and expect a gap in whatever downstream system consumes these."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_callbacks_abandoned_total[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-forgetting-stalled
+        title: HippocampusForgettingStalled
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus has stopped forgetting"
+          description: "The sleep cycle is running but its consolidation and eviction passes are not, because the outbound callback queue is holding undelivered forget-callbacks past its caps and callbacks.backlogPolicy is stall. Nothing is being reclaimed, so used_bytes and capacity pressure will climb past the target for as long as this lasts - the store is holding its own growth open rather than orphaning payloads in whatever system the receiver fronts. This is a receiver outage with a deadline attached: fix the endpoint at callbacks.url and the backlog drains, the stall clears and the next cycle forgets everything that accumulated meanwhile."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_forgetting_stalls_total[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-search-outbox-abandoning
+        title: HippocampusSearchOutboxAbandoning
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "Hippocampus is discarding queued search index deletions"
+          description: "The delete outbox has hit its caps and is discarding queued index deletions before the cluster accepted them. Nothing is lost from the store, but the search index now holds documents whose memories are gone, and only the stale half of the reconciliation sweep will remove them - on its own schedule, which may be an hour. This means the index has been unable to keep up for long enough to exhaust opensearch.outbox.maxAgeHours or maxRows: treat it as an OpenSearch outage, not as tuning."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_search_outbox_abandoned_total[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: hippocampus-panics-recovered
+        title: HippocampusPanicsRecovered
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus handler panicked and was recovered"
+          description: "A gRPC or gateway handler panicked; the caller received Internal/500 and the process survived. The stack trace is in the service logs. Any occurrence is worth investigating - please report it with the trace."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#observability"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (increase(hippocampus_panics_recovered_total[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+  # The client-side group: the broker bridges and the ingestor, which are separate processes that
+  # dial a Hippocampus instance. Provisioned into the same folder as the service's own rules and
+  # kept identical to the hippocampus-clients group in deploy/observability/prometheus-alerts.yaml,
+  # where the reasoning behind each one is written down.
+  - orgId: 1
+    name: hippocampus-clients
+    folder: Hippocampus
+    interval: 1m
+    rules:
+      - uid: hippocampus-bridge-duplicate-stream
+        title: HippocampusBridgeDuplicateStream
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus bridge is re-storing what the store already has"
+          description: "Over 80% of the messages this bridge handles are records the store already held, so it is running without adding anything. The usual causes are a subscription replaying a backlog, an offset or cursor that has stopped advancing, or a bridge restarted against an old position. Check the bridge's logs for a repeating record id, and restart it if the position is stale - the Bluesky bridge resumes from the live tip when it has no cursor."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name, broker) (rate(hippocampus_bridge_messages_total{outcome="exists"}[15m])) / clamp_min(sum by (service_name, broker) (rate(hippocampus_bridge_messages_total[15m])), 0.001) > 0.8 and sum by (service_name, broker) (rate(hippocampus_bridge_messages_total{outcome="exists"}[15m])) > 0.1
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-bridge-not-consuming
+        title: HippocampusBridgeNotConsuming
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus bridge is up but consuming nothing"
+          description: "This bridge has handled no messages for half an hour while continuing to report metrics, so it is running and not consuming. Check the broker end first - a disconnected consumer, a subscription or topic that matches nothing, or a source that has genuinely gone quiet. A bridge whose PROCESS has gone reports nothing at all and cannot be caught here; declare it under the service's topology.components to have its /readyz probed."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: count by (service_name, broker) (sum by (service_name, broker) (rate(hippocampus_bridge_messages_total[15m])) == 0) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-bridge-write-failing
+        title: HippocampusBridgeWriteFailing
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus bridge is failing to store what it consumes"
+          description: "Over 5% of this bridge's messages are failing to transform or store. The at-least-once adapters (MQTT, RabbitMQ, Kafka, Bluesky) will redeliver them and fall behind; NATS is at-most-once and they are lost. Check hippocampus.client.rpc.requests for the code the service is returning - a rejected token, an unreachable instance and a malformed record all land here."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name, broker) (rate(hippocampus_bridge_messages_total{outcome="failed"}[10m])) / clamp_min(sum by (service_name, broker) (rate(hippocampus_bridge_messages_total[10m])), 0.001) > 0.05
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-client-token-rejected
+        title: HippocampusClientTokenRejected
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus client's token is being refused"
+          description: "A bridge, the ingestor, or another client is having its calls rejected as Unauthenticated or PermissionDenied, so it is running and writing nothing. An expired static --token is the usual cause and it never recovers on its own; against an IdP-backed service use the client-credentials grant (--oidc-client-id) so the component mints and refreshes its own. PermissionDenied instead means the token verifies but its role is below the RPC's tier."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name, endpoint) (rate(hippocampus_client_rpc_requests_total{code=~"Unauthenticated|PermissionDenied"}[10m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-ingestor-pass-stale
+        title: HippocampusIngestorPassStale
+        condition: B
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "The Hippocampus ingestor has not completed a pass in 15 minutes"
+          description: "No pass has completed for 15 minutes, so completed events are accumulating on the edge instance unjudged - and an edge holds them only for as long as its own consolidation.minimumRetentionInDays. Check that both ends are reachable (the ingestor's /readyz names which one is not). Raise this threshold if a pass over your edge store legitimately takes longer than the default 30s interval by that much."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (service_name) (hippocampus_ingestor_seconds_since_last_pass) > 900
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-ingestor-rule-errors
+        title: HippocampusIngestorRuleErrors
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "A Hippocampus ingestor rule is erroring rather than matching"
+          description: "This rule's CEL expression is erroring when evaluated, so it never matches and the events it was meant to judge are falling through to whatever follows it. The classic cause is an unguarded map index such as event.metadata['k'] on an event that does not carry the key - guard it with 'k' in event.metadata. The ingestor logs the rule name and the error; --check-rules compiles the file without running a pass."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name, rule) (rate(hippocampus_ingestor_rule_errors_total[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-object-tap-not-reinforcing
+        title: HippocampusObjectTapNotReinforcing
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "The Hippocampus object gateway is reinforcing nothing"
+          description: "Every object read is recalling a memory the store does not hold, so recall reinforcement - the one input no expiry policy has - is not reaching the controller at all. Check that the producer writes each pointer-memory under the id the agent derives, which is '<bucket>/<key>'. The gateway logs the same finding at Warn every 5 minutes."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_objectstore_recalls_total{outcome="missing"}[15m])) > 0 and sum by (service_name) (rate(hippocampus_objectstore_recalls_total{outcome="reinforced"}[15m])) == 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-object-deletions-failing
+        title: HippocampusObjectDeletionsFailing
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: hippocampus
+        annotations:
+          summary: "The Hippocampus object reaper cannot delete what has been forgotten"
+          description: "Objects behind forgotten memories are failing to delete, so external storage is now holding payloads nothing will ever mention again - a leak that grows precisely with how well the decay cycle is working. Check the agent's bucket credentials and its logs, which name the key and the store's error. Deleting an absent object is a success, so this is not a race with another deleter."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name, path) (rate(hippocampus_objectstore_deletions_total{outcome="failed"}[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+      - uid: hippocampus-object-deliveries-rejected
+        title: HippocampusObjectDeliveriesRejected
+        condition: B
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: hippocampus
+        annotations:
+          summary: "The Hippocampus object reaper is refusing forget-callbacks"
+          description: "This agent is answering deliveries with a 5xx, so the service is retrying them and its callback queue is backing up. Under the default backlog policy those deliveries are eventually discarded and the payloads behind them orphaned; under 'stall' the sleep cycle stops forgetting until the backlog drains. The agent logs the underlying failure - usually the bucket refusing a delete."
+          runbook_url: "https://github.com/fastbean-au/hippocampus/blob/main/docs/operations.md#client-side-components"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: sum by (service_name) (rate(hippocampus_objectstore_deliveries_total{outcome="rejected"}[15m])) > 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []

@@ -842,6 +842,15 @@ services:
       # than a dead one.
       - ${GRAFANA_DASHBOARD_FILE:-./observability/hippocampus-dashboard.json}:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json:ro
       - ./observability/dashboards-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+      # The project's shipped alert rules. Without this mount the stack DRAWS but does not ALERT:
+      # Grafana's /api/v1/rules reported zero rule groups here for the life of the showcase, so
+      # every "X alerts on it" in the project's docs was aspirational on the one deployment most
+      # likely to be read as a reference. alerting-rules.yaml is a byte-for-byte copy of the
+      # hippocampus repo's deploy/compose/observability/alerting-rules.yaml - keep it that way, and
+      # re-copy it after a release that touches the rules (`diff` is the whole check). No contact
+      # point is provisioned (nowhere to send them), so this surfaces under Alerting > Alert rules
+      # rather than notifying.
+      - ./observability/alerting-rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/hippocampus.yaml:ro
     networks:
       - shared
 
