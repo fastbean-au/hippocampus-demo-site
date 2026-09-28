@@ -697,7 +697,18 @@ services:
       POSTGRES_PASSWORD: hippocampus
       POSTGRES_DB: hippocampus
     volumes:
-      - combined-postgres-data:/var/lib/postgresql/data
+      # Mounted at /var/lib/postgresql, NOT at .../data, and that is a requirement of the image
+      # rather than a preference: from 18 the official postgres image puts its cluster in a
+      # major-version-specific subdirectory (PGDATA=/var/lib/postgresql/18/docker) so that
+      # `pg_upgrade --link` can run without crossing a mount boundary. A volume still mounted at
+      # .../data is then not where the data goes, and the entrypoint REFUSES to start rather than
+      # quietly initialising an empty cluster beside it - "there appears to be PostgreSQL data in
+      # /var/lib/postgresql/data (unused mount/volume)". See docker-library/postgres#1259.
+      #
+      # Because the cluster now lives inside a version-named subdirectory, upgrading a major is a
+      # data migration and not an image bump: 18 cannot read a directory 17 wrote. Dump and restore
+      # (or pg_upgrade with both binaries to hand, which these alpine images do not carry).
+      - combined-postgres-data:/var/lib/postgresql
       # Creates one database per console on first boot (empty-volume init only).
       - ./postgres/init-showcase-combined.sql:/docker-entrypoint-initdb.d/init-showcase-combined.sql:ro
     networks:
