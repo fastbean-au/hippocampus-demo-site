@@ -232,8 +232,9 @@
             <article class="card">
               <h3>Reinforcement through recall</h3>
               <p>
-                Querying or accessing a record strengthens its retention weight,
-                protecting high-demand operational data from decay.
+                Recalling a record strengthens its retention weight, protecting
+                high-demand operational data from decay — while an operator
+                inspecting one by id reads it without keeping it alive.
               </p>
             </article>
             <article class="card">
@@ -249,7 +250,8 @@
               <p>
                 Embedded or centralised, backed by SQLite, PostgreSQL, or MySQL
                 — with minimum retention floors that hold regardless of storage
-                pressure.
+                pressure, and an optional maximum that removes anything older,
+                however often it is read, when a policy says it must go.
               </p>
             </article>
             <article class="card">
@@ -312,14 +314,16 @@
                   ><strong>Model Context Protocol (MCP)</strong></a
                 >
                 server — works with Claude, ChatGPT, Grok, or any MCP host.
-                <strong>Python</strong> has a published client —
+                <strong>Python</strong> has a ready-made
                 <a
                   href="https://github.com/fastbean-au/hippocampus/blob/main/docs/python.md"
                   rel="noopener"
-                  ><code>pip install hippocampus-client</code></a
-                >, covering the full RPC surface and released from the same tag
-                as the contract it was generated from. Any other language with a
-                gRPC or HTTP stack gets a client in minutes:
+                  ><strong>client</strong></a
+                >, blocking or <code>asyncio</code>, covering the full RPC
+                surface and installed with <code>pip</code> from the release tag
+                of the service you run, so it always carries that tag's
+                contract. Any other language with a gRPC or HTTP stack gets a
+                client in minutes:
                 <a
                   href="https://github.com/fastbean-au/hippocampus/blob/main/docs/clients.md"
                   rel="noopener"
@@ -335,7 +339,8 @@
                 <strong>SQLite</strong> (WAL) or centralised on
                 <strong>PostgreSQL</strong> or <strong>MySQL</strong> — one
                 consolidating node alongside any number of stateless read/write
-                replicas.
+                replicas, any of which can stand by to take over the sleep cycle
+                if the consolidator dies.
               </p>
             </article>
             <article class="card">
@@ -400,11 +405,11 @@
                   ><strong>LlamaIndex</strong></a
                 >
                 adapter (<code>llama-index-memory-hippocampus</code>, over the
-                published Python client) drops in as a long-term memory block
-                whose retrieval <em>reinforces</em> what it returns: a fact the
-                agent keeps reaching for survives by being used, and one it
-                never retrieves decays out — no eviction policy, no cap, no TTL
-                to maintain.
+                Python client) drops in as a long-term memory block whose
+                retrieval <em>reinforces</em> what it returns: a fact the agent
+                keeps reaching for survives by being used, and one it never
+                retrieves decays out — no eviction policy, no cap, no TTL to
+                maintain.
               </p>
             </article>
             <article class="card">
@@ -472,6 +477,10 @@
                 >
                 shows what an instance is attached to — stores, search, model
                 endpoints, peers, bridges — and the last known health of each.
+                Scheduled exports keep a rotating set of archives, SQLite backs
+                up online beside a running instance, and part of a store — one
+                group, a time range, a metadata match — can be exported or moved
+                into another instance on its own.
               </p>
             </article>
             <article class="card">
@@ -480,14 +489,16 @@
                 A single pure-<strong>Go</strong> binary, published multi-arch
                 (amd64 + arm64), with <strong>OIDC</strong> (Auth0, Keycloak, or
                 any provider), <strong>JWT</strong>, and
-                <strong>TLS</strong> throughout. Per-RPC
+                <strong>TLS</strong> throughout, with certificates that reload
+                on renewal without a restart. Per-RPC
                 <strong>reader/writer/admin</strong> tiers say what a caller may
                 do; optional <strong>group scoping</strong> says which records
                 they may do it to, so teams can share one store without sharing
                 their memories. When one of them leaves, deletion by
                 <strong>predicate</strong> drains their records by group, time,
                 or metadata rather than by id — the filter that lists them is
-                the filter that deletes them.
+                the filter that deletes them. Every administrative call, refused
+                ones included, leaves an audit line naming who made it.
               </p>
             </article>
           </div>
@@ -859,8 +870,10 @@ sudo systemctl enable --now hippocampus</code></pre>
               <p>
                 Plain Kustomize — no Helm, no extra tooling. One overlay for the
                 embedded single instance (a <code>StatefulSet</code> and its
-                volume), one for the centralised model (a consolidator plus read
-                replicas over shared PostgreSQL).
+                volume), and one each for the centralised model (a consolidator
+                plus read replicas over shared PostgreSQL or MySQL), all pinned
+                to a release and behind a default-deny
+                <code>NetworkPolicy</code>.
               </p>
               <div class="codeblock-wrap">
                 <pre
