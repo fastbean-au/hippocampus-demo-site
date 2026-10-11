@@ -49,6 +49,13 @@ else
   echo "deploy-site: WARNING - ${SHOWCASE_ENV} not found; compose will use its built-in defaults" >&2
 fi
 
+# Join the hippocampus-showcase unit's cgroup before anything here runs podman, so every container
+# this starts belongs to the unit and outlives the shell or transient unit running the deploy.
+# See unit-cgroup.sh for the 2026-10-08 outage this prevents.
+# shellcheck source=showcase/unit-cgroup.sh
+source "${SCRIPT_DIR}/unit-cgroup.sh"
+join_unit_cgroup deploy-site
+
 # podman-compose derives the project name from the compose file's directory (see start-generators.sh),
 # so scope container lookups to it - a stray site container from another project is never matched.
 PROJECT="$(basename "${SCRIPT_DIR}")"

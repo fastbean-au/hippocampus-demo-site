@@ -300,6 +300,17 @@ else
   echo "deploy-servers: WARNING - ${SHOWCASE_ENV} not found; compose will use its built-in defaults" >&2
 fi
 
+# Join the hippocampus-showcase unit's cgroup before anything here runs podman, so every container
+# this starts belongs to the unit and outlives the shell or transient unit running the deploy.
+# See unit-cgroup.sh for the 2026-10-08 outage this prevents.
+# A dry run starts nothing, so it skips this - and with it the refusal on a stopped unit, which
+# would otherwise stop a dry run from planning against a stack that is down.
+# shellcheck source=showcase/unit-cgroup.sh
+source "${SCRIPT_DIR}/unit-cgroup.sh"
+if [[ ${DRY_RUN} -eq 0 ]]; then
+  join_unit_cgroup deploy-servers
+fi
+
 # podman-compose derives the project name from the compose file's directory (see start-generators.sh),
 # so scope every container lookup to it - a stray container from another project is never matched.
 PROJECT="$(basename "${SCRIPT_DIR}")"
