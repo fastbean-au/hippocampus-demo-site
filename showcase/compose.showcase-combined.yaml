@@ -841,6 +841,17 @@ services:
     environment:
       GF_SERVER_ROOT_URL: "https://grafana.${BASE_DOMAIN:-hippocampus.example}/"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/hippocampus.json
+      # Retention. The image keeps all of its data under /data in the CONTAINER'S writable layer (not
+      # a volume), and ships no retention of its own beyond Tempo's 14-day default. Every bounce used
+      # to wipe it, which hid the growth: the 2026-10-10 bounce was followed by the first run longer
+      # than ~8 days, Tempo's blocks reached 16 GB at ~1.8 GB/day, and on 2026-10-19 the 48 GB root
+      # disk filled, Postgres crashed on ENOSPC and every console was down for ~4 days. Two days of
+      # traces and a size cap on the TSDB keep the whole of /data to a few GB.
+      TEMPO_EXTRA_ARGS: "-backend-scheduler.provider.work.compaction.block-retention=48h -backend-worker.compaction.block-retention=48h"
+      PROMETHEUS_EXTRA_ARGS: "--storage.tsdb.retention.size=4GB"
+      # Merged over the image's own collector config: adds a host-metrics pipeline for the disk the
+      # whole stack lives on, which the showcase rules below alert on.
+      OTELCOL_EXTRA_ARGS: "--config=file:/otel-lgtm/otelcol-host-metrics.yaml"
     volumes:
       # GRAFANA_DASHBOARD_FILE swaps in a domain-rendered dashboard, exactly as KEYCLOAK_REALM_FILE
       # does for the realm. This dashboard is Grafana's home dashboard (above), so it is where a
@@ -859,9 +870,13 @@ services:
       # likely to be read as a reference. alerting-rules.yaml is a byte-for-byte copy of the
       # hippocampus repo's deploy/compose/observability/alerting-rules.yaml - keep it that way, and
       # re-copy it after a release that touches the rules (`diff` is the whole check). No contact
-      # point is provisioned (nowhere to send them), so this surfaces under Alerting > Alert rules
-      # rather than notifying.
+      # point is provisioned: the off-host watchdog (.github/workflows/watchdog.yml) reads rule state
+      # through Grafana's anonymous API instead, and opens an issue while a critical rule fires.
       - ./observability/alerting-rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/hippocampus.yaml:ro
+      # The showcase's OWN rules - the host, not Hippocampus - kept apart so the file above stays a
+      # byte-for-byte copy.
+      - ./observability/showcase-alerting-rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/showcase.yaml:ro
+      - ./observability/otelcol-host-metrics.yaml:/otel-lgtm/otelcol-host-metrics.yaml:ro
     networks:
       - shared
 

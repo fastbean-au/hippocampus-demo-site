@@ -150,6 +150,13 @@ python3 -m http.server 8000
 
 There is no test suite; `showcase/check-consistency.sh` is the one check.
 
+The live showcase is watched from outside by `.github/workflows/watchdog.yml` (every 15 min,
+`.github/watchdog/probe.py`). It probes every host the Caddyfile serves, and reads Grafana's
+critical rules anonymously. It opens one `watchdog` issue while anything fails and closes it on
+recovery. The host's own rules (disk) live in `showcase/observability/showcase-alerting-rules.yaml`,
+never in `alerting-rules.yaml`, which stays a byte-for-byte copy of the hippocampus repo's. See
+[`docs/showcase.md`](docs/showcase.md#being-told-when-it-breaks).
+
 ## The console list is written down seven times
 
 Which consoles the combined stack serves is recorded independently in the Caddyfile (the site

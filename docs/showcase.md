@@ -874,6 +874,37 @@ sudo ./showcase/uninstall-ubuntu.sh
 > service. That is fine for a demo; if you need consoles to be security-isolated, run the
 > single-console stacks (and a domain each) instead.
 
+#### Being told when it breaks
+
+On 2026-10-19 the host's 48 GB root disk filled, Postgres crashed on `ENOSPC`, and every console
+was down for about four days before anyone looked. Two things hid it, and each now has a fix.
+
+**The disk filled unseen.** otel-lgtm keeps all of its data under `/data` in the container's
+writable layer, and nothing bounded it: Tempo kept its default 14 days of traces, about 1.8 GB a
+day here. Every bounce used to wipe it, so it only became a problem once the stack ran for more than
+about eight days without one. The compose file now caps it (`TEMPO_EXTRA_ARGS` keeps two days of
+traces, `PROMETHEUS_EXTRA_ARGS` caps the TSDB at 4 GB). A host-metrics pipeline
+([`otelcol-host-metrics.yaml`](../showcase/observability/otelcol-host-metrics.yaml)) measures the root
+disk, and [`showcase-alerting-rules.yaml`](../showcase/observability/showcase-alerting-rules.yaml)
+alerts on it: a warning at 75%, critical at 85%, and a critical if the metric stops arriving, since
+a disk rule with no data is silent rather than red.
+
+**Nothing could say so.** Grafana has no contact point, and any check that runs on the host shares
+the host's fate. The [watchdog workflow](../.github/workflows/watchdog.yml) runs on GitHub's runners
+every 15 minutes instead. [`probe.py`](../.github/watchdog/probe.py) checks every host the Caddyfile
+serves, and reads Grafana's alert state through its anonymous API, so a firing **critical** rule
+counts too. That is how the disk alert reaches anyone at all. Warnings stay in Grafana: several
+fire routinely on a demo this small.
+
+While anything fails, the workflow keeps one open issue labelled `watchdog` that mentions the
+repository owner, so GitHub notifies them by email and on the mobile app. It comments only when the
+list of problems changes, and comments and closes the issue once every check passes. Run it by hand
+from the Actions tab (**Watchdog** → **Run workflow**). Point it at another deployment with the
+repository variable `SHOWCASE_BASE_DOMAIN`.
+
+> GitHub disables a scheduled workflow in a public repository after 60 days without a commit. A
+> disabled watchdog is silent, so re-enable it under **Actions** if the repository goes quiet.
+
 ### A lite single stack (e2-micro)
 
 The combined and single-console stacks all run Postgres + OpenSearch + Keycloak + otel-lgtm behind

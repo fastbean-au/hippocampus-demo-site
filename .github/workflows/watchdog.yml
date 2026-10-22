@@ -1,0 +1,100 @@
+# Watch the hosted showcase from OUTSIDE it, and open an issue while it is unhealthy.
+#
+# On 2026-10-19 the showcase host's disk filled, Postgres crashed, and every console was down for
+# ~4 days before anyone looked. Nothing on the host could have said so: Grafana has no contact point,
+# and a check that runs on the host shares its fate. This runs on GitHub's runners instead.
+#
+# Every 15 minutes .github/watchdog/probe.py checks every host the Caddyfile serves, and every
+# critical Grafana rule (read anonymously, so the disk rules in
+# showcase/observability/showcase-alerting-rules.yaml reach here before the disk is full). Then:
+#
+# - problems and no open `watchdog` issue: open one, mentioning the repository owner, so GitHub
+#   notifies them by email and on the mobile app;
+# - problems that changed since the issue's last report: comment the new list (another notification);
+# - the same problems again: nothing, so an outage is one notification, not one every 15 minutes;
+# - no problems and an open issue: comment that it recovered, and close it.
+#
+# GitHub disables a scheduled workflow in a public repository after 60 days with no commits. A
+# disabled watchdog says nothing, so re-enable it under Actions if the repository goes quiet.
+
+name: Watchdog
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_DOMAIN: ${{ vars.SHOWCASE_BASE_DOMAIN || 'hippocampus-demo.com' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Probe the showcase
+        run: python3 -I .github/watchdog/probe.py | tee problems.txt
+
+      - name: Open, update or close the watchdog issue
+        run: |
+          set -euo pipefail
+
+          gh label create watchdog --color B60205 \
+            --description "Opened and closed by the showcase watchdog" 2>/dev/null || true
+
+          issue=$(gh issue list --label watchdog --state open --json number --jq '.[0].number // empty')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ ! -s problems.txt ]]; then
+            if [[ -n ${issue} ]]; then
+              gh issue comment "${issue}" --body "Recovered: every check passed at $(date -u '+%Y-%m-%d %H:%M UTC') ([run](${run_url}))."
+              gh issue close "${issue}"
+            fi
+
+            exit 0
+          fi
+
+          # The problem list's hash rides along in a hidden marker, so a repeat of the same list
+          # stays quiet and a changed one is reported.
+          digest=$(sha256sum problems.txt | cut -c1-16)
+          marker="<!-- watchdog:${digest} -->"
+          list=$(sed 's/^/- /' problems.txt)
+
+          if [[ -z ${issue} ]]; then
+            gh issue create --label watchdog \
+              --title "Showcase unhealthy: $(head -1 problems.txt | cut -c1-80)" \
+              --body "@${OWNER} the showcase watchdog found a problem at $(date -u '+%Y-%m-%d %H:%M UTC'):
+
+          ${list}
+
+          [Run](${run_url}). This issue closes itself once every check passes again.
+
+          ${marker}"
+
+            exit 0
+          fi
+
+          last=$(gh issue view "${issue}" --json body,comments \
+            --jq '[.body] + [.comments[].body] | map(select(contains("<!-- watchdog:"))) | last')
+
+          if [[ ${last} != *"${marker}"* ]]; then
+            gh issue comment "${issue}" --body "@${OWNER} the problems changed at $(date -u '+%Y-%m-%d %H:%M UTC'):
+
+          ${list}
+
+          [Run](${run_url}).
+
+          ${marker}"
+          fi

@@ -1,0 +1,153 @@
+# The showcase's own alert rules: the HOST the combined stack runs on, not Hippocampus. They live
+# apart from alerting-rules.yaml because that file is a byte-for-byte copy of the hippocampus repo's,
+# re-copied after each release that touches it.
+#
+# WHY THESE EXIST. On 2026-10-19 the 48 GB root disk filled (otel-lgtm's Tempo blocks, 16 GB in nine
+# days), Postgres crashed on ENOSPC, and every console was down for ~4 days before anyone looked.
+# Grafana stayed up throughout and alerted on nothing: the Hippocampus rules are metric-driven with
+# noDataState OK, so a dead server goes quiet rather than red, and nothing measured the disk at all.
+#
+# The disk metric comes from otelcol-host-metrics.yaml. Same conventions as the sibling file: one
+# instant query whose PromQL returns a positive value only while the rule should fire, and a `gt 0`
+# threshold. severity=critical is what the off-host watchdog (.github/workflows/watchdog.yml) opens
+# an issue for; a warning is visible only in Grafana.
+
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: showcase
+    folder: Showcase
+    interval: 1m
+    rules:
+      - uid: showcase-host-disk-filling
+        title: ShowcaseHostDiskFilling
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          service: showcase
+        annotations:
+          summary: "The showcase host's root disk is over 75% full"
+          description: "Every container layer and named volume lives on this disk. Look at what is growing before it reaches the critical threshold: `sudo du -xh --max-depth=1 /var/lib/containers/storage/volumes`, each container's writable layer (`podman inspect -f '{{.GraphDriver.Data.UpperDir}}'`, otel-lgtm's above all), `podman images` for superseded tags, and `journalctl --disk-usage`."
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (mountpoint) (system_filesystem_utilization_ratio{service_name="showcase-host", mountpoint="/"}) > 0.75
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      - uid: showcase-host-disk-critical
+        title: ShowcaseHostDiskCritical
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: showcase
+        annotations:
+          summary: "The showcase host's root disk is over 85% full"
+          description: "At 100% Postgres crashes on ENOSPC and takes every console down with it, and podman's own state database stops accepting writes, so even `podman exec` fails. Free space now: otel-lgtm's /data (stop the container, then clear data/tempo/blocks under its UpperDir), superseded images, and the journal (`journalctl --vacuum-size=200M`). The stores' volumes are the last resort."
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: max by (mountpoint) (system_filesystem_utilization_ratio{service_name="showcase-host", mountpoint="/"}) > 0.85
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []
+
+      # The two rules above are silent - not green - if the metric stops arriving: a collector config
+      # the image no longer accepts, or a renamed metric after an otel-lgtm upgrade. This turns that
+      # silence into a finding. It cannot fire straight after a bounce: the collector's first scrape
+      # lands within a minute, well inside the `for:`.
+      - uid: showcase-host-metrics-missing
+        title: ShowcaseHostMetricsMissing
+        condition: B
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: showcase
+        annotations:
+          summary: "The showcase's disk metric has stopped arriving, so the disk alerts are blind"
+          description: 'Nothing has reported system_filesystem_utilization_ratio{service_name="showcase-host"} for 15 minutes. Check the collector''s log in otel-lgtm for an error about otelcol-host-metrics.yaml, and whether an image update renamed the metric (query system_filesystem_* in Grafana''s Explore).'
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 900
+              to: 0
+            model:
+              refId: A
+              editorMode: code
+              instant: true
+              range: false
+              expr: absent_over_time(system_filesystem_utilization_ratio{service_name="showcase-host", mountpoint="/"}[15m])
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                    params: []

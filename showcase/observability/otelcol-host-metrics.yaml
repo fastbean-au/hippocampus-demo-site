@@ -1,0 +1,38 @@
+# Merged over otel-lgtm's own /otel-lgtm/otelcol-config.yaml (OTELCOL_EXTRA_ARGS in the compose
+# file), so this defines only what it adds: one more metrics pipeline, measuring the disk the whole
+# showcase lives on. The collector merges maps and replaces lists, which is why this is a NEW
+# pipeline rather than an extra receiver on the image's `metrics` one.
+#
+# No host mount is needed. `/` inside the container is an overlay whose statfs reports the backing
+# filesystem - the host's root disk, where podman keeps every container layer and named volume. It
+# is a "nodev" filesystem, so the scraper skips it unless include_virtual_filesystems is set.
+#
+# In Prometheus this arrives as system_filesystem_utilization_ratio{service_name="showcase-host"},
+# which showcase-alerting-rules.yaml alerts on.
+
+receivers:
+  hostmetrics/showcase:
+    collection_interval: 60s
+    scrapers:
+      filesystem:
+        include_virtual_filesystems: true
+        include_mount_points:
+          mount_points: ["/"]
+          match_type: strict
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+processors:
+  resource/showcase-host:
+    attributes:
+      - key: service.name
+        value: showcase-host
+        action: upsert
+
+service:
+  pipelines:
+    metrics/host:
+      receivers: [hostmetrics/showcase]
+      processors: [resource/showcase-host, batch]
+      exporters: [otlp_http/metrics]

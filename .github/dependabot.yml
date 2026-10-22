@@ -19,7 +19,7 @@
 # running Keycloak rejects does not degrade - it crash-loops the container and takes the showcase
 # apex down with it. A major bump here is a change to the demo, not a dependency refresh.
 #
-# NO github-actions ENTRY, deliberately: this repository has no workflows. Add one with the first.
+# The github-actions entry covers the watchdog workflow's action pins.
 version: 2
 
 updates:
@@ -40,3 +40,8 @@ updates:
       showcase-images:
         patterns:
           - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
