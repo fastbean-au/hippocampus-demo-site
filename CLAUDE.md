@@ -132,12 +132,14 @@ sudo ./showcase/deploy-servers.sh --dry-run --version 0.40.1      # what that wo
 # Caddyfile change on a host that updates by `git pull` (see the reload caveat below).
 sudo ./showcase/deploy-caddy.sh
 
-# Every script above (and start-generators.sh) first moves itself into the hippocampus-showcase unit's
-# cgroup (showcase/unit-cgroup.sh), because a container's conmon lands in the cgroup of whoever ran
-# podman and dies with it: on 2026-10-08 containers recreated under `systemd-run --collect` or from a
-# plain ssh session became phantoms when that unit or session ended. So they are safe to run from
-# ssh or a transient unit, they need root, and they REFUSE while the unit is stopped (start it
-# instead). A --dry-run starts nothing and skips the join.
+# Every script above (and start-generators.sh) first unsets INVOCATION_ID (showcase/unit-cgroup.sh).
+# podman keeps a container's conmon in its launcher's cgroup when that variable is set, as it is
+# under any systemd unit, and the conmon then dies with the unit: on 2026-10-08 a deploy run under
+# `systemd-run --collect` left every container it recreated a phantom. Unset, podman gives each
+# conmon a scope of its own. So they are safe to run from ssh, nohup or a transient unit, and they
+# REFUSE while the unit is stopped (start it instead). A --dry-run starts nothing and skips the
+# check. After a deploy, check that every conmon is ALIVE; where it lives (the unit's cgroup or a
+# machine.slice/libpod-conmon scope) is not a fault either way.
 
 # Local preview without a container engine (serves the repo root on :8000)
 python3 -m http.server 8000

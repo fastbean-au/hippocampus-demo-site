@@ -21,12 +21,11 @@ set -uo pipefail
 
 COMPOSE_FILE="${1:?usage: start-generators.sh <compose-file>}"
 
-# Run by the unit this is already inside it and the join is a no-op. Run by hand, it is the
-# 2026-10-08 case: generators started from a plain ssh session died when that session closed. See
-# unit-cgroup.sh.
+# Run by the unit this changes nothing, and the generators stay the unit's. Run by hand or from a
+# transient unit, it keeps them from dying with whatever launched it. See unit-cgroup.sh.
 # shellcheck source=showcase/unit-cgroup.sh
 source "$(dirname "${BASH_SOURCE[0]}")/unit-cgroup.sh"
-join_unit_cgroup start-generators
+detach_from_launcher start-generators
 
 # Bounded wait for Caddy to be healthy, using its container healthcheck as the readiness signal.
 # `podman compose ps -q <svc>` returns nothing on podman-compose 1.0.6, so find the Caddy container by
