@@ -893,12 +893,20 @@ a disk rule with no data is silent rather than red.
 the host's fate. The [watchdog workflow](../.github/workflows/watchdog.yml) runs on GitHub's runners
 every 15 minutes instead. [`probe.py`](../.github/watchdog/probe.py) checks every host the Caddyfile
 serves, and reads Grafana's alert state through its anonymous API, so a firing **critical** rule
-counts too. That is how the disk alert reaches anyone at all. Warnings stay in Grafana: several
-fire routinely on a demo this small.
+counts too. That is how the disk alert reaches anyone at all. Warnings are not reported as they
+fire, since several fire routinely on a demo this small. A warning that has fired for **3 days** or
+more is reported once, though: an alert that fires for weeks cannot report a change, and nobody
+opens Grafana to see it. The storage-shape warnings fired from 2026-10-24 to at least 11-11 without
+anyone being told. Set the repository variable `WATCHDOG_WARNING_DAYS` to change the threshold.
+Grafana's `activeAt` gives the firing time, and a Grafana restart resets it. So a warning is
+reported only once it has stood that long since the last bounce.
 
 While anything fails, the workflow keeps one open issue labelled `watchdog` that mentions the
 repository owner, so GitHub notifies them by email and on the mobile app. It comments only when the
-list of problems changes, and comments and closes the issue once every check passes. Run it by hand
+list of problems changes, and comments and closes the issue once every check passes. Long-standing
+warnings get their own issue, labelled `watchdog-warning`, which works the same way. That way a
+warning nobody can fix today never holds the outage issue open. [`report.sh`](../.github/watchdog/report.sh)
+handles both issues. Run it by hand
 from the Actions tab (**Watchdog** → **Run workflow**). Point it at another deployment with the
 repository variable `SHOWCASE_BASE_DOMAIN`.
 

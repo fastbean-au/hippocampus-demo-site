@@ -6,13 +6,16 @@
 #
 # Every 15 minutes .github/watchdog/probe.py checks every host the Caddyfile serves, and every
 # critical Grafana rule (read anonymously, so the disk rules in
-# showcase/observability/showcase-alerting-rules.yaml reach here before the disk is full). Then:
+# showcase/observability/showcase-alerting-rules.yaml reach here before the disk is full).
+# .github/watchdog/report.sh then keeps one `watchdog` issue in step with what it found: opened
+# (mentioning the repository owner, so GitHub notifies them by email and on the mobile app), commented
+# only when the list changes, and closed once everything passes.
 #
-# - problems and no open `watchdog` issue: open one, mentioning the repository owner, so GitHub
-#   notifies them by email and on the mobile app;
-# - problems that changed since the issue's last report: comment the new list (another notification);
-# - the same problems again: nothing, so an outage is one notification, not one every 15 minutes;
-# - no problems and an open issue: comment that it recovered, and close it.
+# Warnings are not outages and are not reported as they fire - several fire routinely on a demo this
+# small. But one that fires for weeks says nothing, and nobody opens Grafana to see it, so a warning
+# that has stood for WARNING_DAYS days (the repository variable WATCHDOG_WARNING_DAYS, 3 if unset)
+# is reported once, on a `watchdog-warning` issue of its own (TODO-3 item 184 in the hippocampus
+# repository).
 #
 # GitHub disables a scheduled workflow in a public repository after 60 days with no commits. A
 # disabled watchdog says nothing, so re-enable it under Actions if the repository goes quiet.
@@ -41,6 +44,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       OWNER: ${{ github.repository_owner }}
+      WARNING_DAYS: ${{ vars.WATCHDOG_WARNING_DAYS || '3' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -49,52 +53,28 @@ jobs:
 
       - name: Open, update or close the watchdog issue
         run: |
+          .github/watchdog/report.sh watchdog problems.txt "Showcase unhealthy" \
+            "the showcase watchdog found a problem"
+
+      # A separate issue, so that a warning which cannot be fixed today never holds the outage issue
+      # open, and so that an outage never reads as the warnings having recovered. Exit 3 means
+      # Grafana could not be read; the step above has already reported that, so this leaves the
+      # warning issue exactly as it was.
+      - name: Report warnings that have stood for days
+        run: |
           set -euo pipefail
 
-          gh label create watchdog --color B60205 \
-            --description "Opened and closed by the showcase watchdog" 2>/dev/null || true
+          rc=0
+          python3 -I .github/watchdog/probe.py --warnings > warnings.txt || rc=$?
+          cat warnings.txt
 
-          issue=$(gh issue list --label watchdog --state open --json number --jq '.[0].number // empty')
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
-          if [[ ! -s problems.txt ]]; then
-            if [[ -n ${issue} ]]; then
-              gh issue comment "${issue}" --body "Recovered: every check passed at $(date -u '+%Y-%m-%d %H:%M UTC') ([run](${run_url}))."
-              gh issue close "${issue}"
-            fi
-
+          if [[ ${rc} -eq 3 ]]; then
             exit 0
           fi
 
-          # The problem list's hash rides along in a hidden marker, so a repeat of the same list
-          # stays quiet and a changed one is reported.
-          digest=$(sha256sum problems.txt | cut -c1-16)
-          marker="<!-- watchdog:${digest} -->"
-          list=$(sed 's/^/- /' problems.txt)
-
-          if [[ -z ${issue} ]]; then
-            gh issue create --label watchdog \
-              --title "Showcase unhealthy: $(head -1 problems.txt | cut -c1-80)" \
-              --body "@${OWNER} the showcase watchdog found a problem at $(date -u '+%Y-%m-%d %H:%M UTC'):
-
-          ${list}
-
-          [Run](${run_url}). This issue closes itself once every check passes again.
-
-          ${marker}"
-
-            exit 0
+          if [[ ${rc} -ne 0 ]]; then
+            exit "${rc}"
           fi
 
-          last=$(gh issue view "${issue}" --json body,comments \
-            --jq '[.body] + [.comments[].body] | map(select(contains("<!-- watchdog:"))) | last')
-
-          if [[ ${last} != *"${marker}"* ]]; then
-            gh issue comment "${issue}" --body "@${OWNER} the problems changed at $(date -u '+%Y-%m-%d %H:%M UTC'):
-
-          ${list}
-
-          [Run](${run_url}).
-
-          ${marker}"
-          fi
+          .github/watchdog/report.sh watchdog-warning warnings.txt "Showcase warning standing" \
+            "a warning alert has been firing for ${WARNING_DAYS} days or more"

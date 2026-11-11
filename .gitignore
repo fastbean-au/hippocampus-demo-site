@@ -6,6 +6,9 @@
 *.dylib
 .DS_Store
 
+# Python bytecode, written by any local run or compile check of .github/watchdog/probe.py
+__pycache__/
+
 # env file
 .env
 
