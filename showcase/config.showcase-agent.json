@@ -44,6 +44,9 @@
   },
   "storage": {
     "driver": "postgres",
+    "indexRebuild": {
+      "enabled": true
+    },
     "directory": "",
     "postgres": {
       "dsn": "postgres://hippocampus:hippocampus@postgres:5432/hippocampus?sslmode=disable"
