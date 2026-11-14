@@ -1,0 +1,18 @@
+# Warnings the watchdog does not report, because each has been looked at and judged to be standing
+# by design. Read by .github/watchdog/probe.py --warnings.
+#
+# One entry a line, fields separated by spaces:
+#
+#   <rule> <service> <until> <why>
+#
+# - rule: the Grafana alert rule's name.
+# - service: the instance's service_name label. Required, so accepting one store's warning never
+#   hides the same rule firing on another.
+# - until: the last day (UTC, YYYY-MM-DD) the entry holds. After it the warning is reported again,
+#   with a line asking for the entry to be renewed or removed. `never` holds it for good.
+# - why: the reason, and where the decision is recorded. The rest of the line.
+#
+# An entry whose warning is not firing at all is reported, so remove an entry once its warning has
+# cleared. A line the probe cannot read fails the watchdog run rather than guessing.
+
+HippocampusAncillaryStorageHigh hippocampus-bluesky never forgotten log held at its 100,000-row cap against an 850 kB store by design (hippocampus TODO-3 item 184, decided 2026-11-12)

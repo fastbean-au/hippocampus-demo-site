@@ -1,0 +1,33 @@
+# Test the watchdog's own code whenever it changes.
+#
+# The watchdog runs on a schedule and is the only thing that tells anyone the showcase is down, so a
+# change that breaks it would be found by the outage it then fails to report. In particular, the
+# accepted-warnings list decides what is NOT reported: a line read wrongly would either hide a
+# warning or keep reporting one that was accepted, and both look like a quiet, healthy watchdog.
+
+name: Watchdog tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/watchdog/**"
+      - ".github/workflows/watchdog*.yml"
+  pull_request:
+    paths:
+      - ".github/watchdog/**"
+      - ".github/workflows/watchdog*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the watchdog tests
+        run: python3 -I -m unittest discover -s .github/watchdog -v

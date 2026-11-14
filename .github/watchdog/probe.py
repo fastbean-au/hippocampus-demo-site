@@ -23,6 +23,15 @@ time is Grafana's activeAt, which a restart of Grafana resets, so a warning is r
 has stood that long since the last bounce. It exits 3 if Grafana cannot be read, which the workflow
 takes as "unknown" and leaves the issue as it was: the main probe already reports that, and treating
 it as "no warnings" would close the issue on every outage.
+
+A warning that has been looked at and judged to be standing by design is listed in ACCEPTED, and is
+not reported while its entry holds. An entry names a rule AND a service, so accepting one store's
+warning never hides the same rule firing somewhere else. It holds until its end date, or for good
+when the date is `never`. An expired entry reports its warning again, with a line asking for the
+entry to be renewed or removed, and an entry whose warning is not firing at all is reported too, so
+the list cannot quietly fill with entries nobody needs. --accepted-out names a file to write the
+warnings that were held back to, which the workflow uses to say so rather than "recovered" when it
+closes the issue.
 """
 
 import argparse
@@ -32,11 +41,12 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 
 CADDYFILE = "showcase/caddy/Caddyfile.combined"
+ACCEPTED = ".github/watchdog/accepted-warnings.txt"
 ATTEMPTS = 3
 RETRY_SECONDS = 20
 TIMEOUT_SECONDS = 15
@@ -126,25 +136,100 @@ def active_since(alert):
     return datetime.fromisoformat(alert["activeAt"].replace("Z", "+00:00"))
 
 
-def long_firing_warnings(rules, days):
-    """One line per warning rule with instances firing for at least `days`.
+def parse_accepted(text):
+    """Return {(rule, service): (until, why)} from the accepted-warnings list.
 
-    Each line names the date the oldest of them began, not how long ago that was, so the line - and
-    the digest the workflow keeps of the list - stays the same from one run to the next, and a
-    standing warning is reported once rather than daily.
+    One entry a line: the rule, the service, the last day it holds (YYYY-MM-DD) or `never`, then
+    why. Blank lines and `#` comments are skipped. Anything else raises ValueError naming the line,
+    since a list read wrongly would either hide a warning or report an accepted one.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    accepted = {}
+    for number, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        fields = line.split(None, 3)
+        if len(fields) < 4:
+            raise ValueError(f"line {number}: want <rule> <service> <YYYY-MM-DD|never> <why>")
+
+        rule, service, until_text, why = fields
+        if until_text == "never":
+            until = None
+        else:
+            try:
+                until = date.fromisoformat(until_text)
+            except ValueError:
+                raise ValueError(
+                    f"line {number}: '{until_text}' is neither YYYY-MM-DD nor never"
+                ) from None
+
+        if (rule, service) in accepted:
+            raise ValueError(f"line {number}: {rule} ({service}) is listed twice")
+
+        accepted[(rule, service)] = (until, why)
+
+    return accepted
+
+
+def load_accepted(path):
+    """The accepted-warnings list at `path`, or none at all when the file does not exist."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return parse_accepted(f.read())
+    except FileNotFoundError:
+        return {}
+
+
+def long_firing_warnings(rules, days, accepted, now):
+    """Return (reported, held back): the lines to report, and the accepted warnings not reported.
+
+    A warning line covers one rule's instances that have fired for at least `days`, less those an
+    entry in `accepted` holds back. Each line names the date the oldest of them began, not how long
+    ago that was, so the line - and the digest the workflow keeps of the list - stays the same from
+    one run to the next, and a standing warning is reported once rather than daily. After them come
+    one line per expired entry still firing, then one per entry whose warning is not firing at all.
+    """
+    cutoff = now - timedelta(days=days)
 
     lines = []
+    expired = []
+    held = []
+    present = set()
     for rule in rules:
         if rule.get("labels", {}).get("severity") != "warning":
             continue
 
-        stood = [
-            (since, a.get("labels", {}))
-            for a in rule.get("alerts", [])
-            if (since := active_since(a)) is not None and since <= cutoff
-        ]
+        stood = []
+        for alert in rule.get("alerts", []):
+            labels = alert.get("labels", {})
+            key = (rule["name"], labels.get("service_name", ""))
+
+            # Pending counts as present: a Grafana restart sends every instance back through
+            # pending, and that must not read as the accepted warning having stopped.
+            if alert.get("state") in ("Alerting", "Pending"):
+                present.add(key)
+
+            since = active_since(alert)
+            if since is None or since > cutoff:
+                continue
+
+            if key in accepted:
+                until, why = accepted[key]
+                name, service = key
+                if until is None or now.date() <= until:
+                    holds = f"until {until}" if until else "with no end date"
+                    held.append(f"{name} ({service}), {holds}: {why}")
+
+                    continue
+
+                expired.append(
+                    f"Acceptance expired on {until}: {name} ({service})"
+                    f" - renew or remove its entry in {ACCEPTED}"
+                )
+
+            stood.append((since, labels))
+
         if not stood:
             continue
 
@@ -153,17 +238,38 @@ def long_firing_warnings(rules, days):
         where = f" ({', '.join(names)})" if names else ""
         lines.append(f"Warning firing since {oldest:%Y-%m-%d}: {rule['name']}{where}")
 
-    return lines
+    stale = [
+        f"Accepted warning no longer firing: {rule} ({service}) - remove its entry from {ACCEPTED}"
+        for rule, service in sorted(set(accepted) - present)
+    ]
+
+    return lines + sorted(expired) + stale, sorted(held)
 
 
-def warnings_main(base_domain):
+def warnings_main(base_domain, accepted_out):
+    try:
+        accepted = load_accepted(ACCEPTED)
+    except ValueError as e:
+        sys.exit(f"probe: {ACCEPTED}: {e}")
+
     rules, reason = alert_rules(base_domain)
     if rules is None:
         print(f"probe: Grafana's alert state could not be read: {reason}", file=sys.stderr)
         sys.exit(3)
 
-    for line in long_firing_warnings(rules, float(os.environ.get("WARNING_DAYS") or 3)):
+    reported, held = long_firing_warnings(
+        rules,
+        float(os.environ.get("WARNING_DAYS") or 3),
+        accepted,
+        datetime.now(timezone.utc),
+    )
+
+    for line in reported:
         print(line)
+
+    if accepted_out:
+        with open(accepted_out, "w", encoding="utf-8") as f:
+            f.writelines(f"{line}\n" for line in held)
 
 
 def main():
@@ -173,12 +279,17 @@ def main():
         action="store_true",
         help="report only warning rules that have fired for WARNING_DAYS days",
     )
+    parser.add_argument(
+        "--accepted-out",
+        metavar="PATH",
+        help="with --warnings, write the accepted warnings that were not reported to PATH",
+    )
     args = parser.parse_args()
 
     base_domain = os.environ.get("BASE_DOMAIN", "hippocampus-demo.com")
 
     if args.warnings:
-        warnings_main(base_domain)
+        warnings_main(base_domain, args.accepted_out)
 
         return
 

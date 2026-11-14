@@ -910,6 +910,18 @@ handles both issues. Run it by hand
 from the Actions tab (**Watchdog** → **Run workflow**). Point it at another deployment with the
 repository variable `SHOWCASE_BASE_DOMAIN`.
 
+**A warning that stands by design** can be listed in
+[`accepted-warnings.txt`](../.github/watchdog/accepted-warnings.txt), and is then not reported. Each
+entry names the rule, the service, the last day it holds (`never` for no end date), and why. It
+matches on rule and service together, so accepting bluesky's `HippocampusAncillaryStorageHigh` never
+hides the same rule firing on another store. Once an entry's date passes, its warning is reported
+again, with a line asking for the entry to be renewed or removed. An entry whose warning is not
+firing at all is reported too, so a misspelt or forgotten entry surfaces rather than accumulating.
+When the warning issue closes because what is left is accepted, its comment lists those warnings
+rather than saying they recovered. The tests in
+[`test_probe.py`](../.github/watchdog/test_probe.py) run on every change to the watchdog:
+`python3 -I -m unittest discover -s .github/watchdog`.
+
 > GitHub disables a scheduled workflow in a public repository after 60 days without a commit. A
 > disabled watchdog is silent, so re-enable it under **Actions** if the repository goes quiet.
 

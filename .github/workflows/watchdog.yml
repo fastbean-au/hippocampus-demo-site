@@ -15,7 +15,8 @@
 # small. But one that fires for weeks says nothing, and nobody opens Grafana to see it, so a warning
 # that has stood for WARNING_DAYS days (the repository variable WATCHDOG_WARNING_DAYS, 3 if unset)
 # is reported once, on a `watchdog-warning` issue of its own (TODO-3 item 184 in the hippocampus
-# repository).
+# repository). One judged to be standing by design is listed in
+# .github/watchdog/accepted-warnings.txt and not reported while its entry holds.
 #
 # GitHub disables a scheduled workflow in a public repository after 60 days with no commits. A
 # disabled watchdog says nothing, so re-enable it under Actions if the repository goes quiet.
@@ -65,7 +66,8 @@ jobs:
           set -euo pipefail
 
           rc=0
-          python3 -I .github/watchdog/probe.py --warnings > warnings.txt || rc=$?
+          python3 -I .github/watchdog/probe.py --warnings --accepted-out accepted.txt \
+            > warnings.txt || rc=$?
           cat warnings.txt
 
           if [[ ${rc} -eq 3 ]]; then
@@ -77,4 +79,4 @@ jobs:
           fi
 
           .github/watchdog/report.sh watchdog-warning warnings.txt "Showcase warning standing" \
-            "a warning alert has been firing for ${WARNING_DAYS} days or more"
+            "a warning alert has been firing for ${WARNING_DAYS} days or more" accepted.txt

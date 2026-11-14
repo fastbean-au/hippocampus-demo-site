@@ -2,7 +2,7 @@
 #
 # Keep one open GitHub issue in step with a list of problems, one per line in a file.
 #
-#   report.sh <label> <problems file> <title prefix> <opening line>
+#   report.sh <label> <problems file> <title prefix> <opening line> [<accepted file>]
 #
 # Run by .github/workflows/watchdog.yml, once for the outage list and once for the long-standing
 # warnings, each under its own label so that a warning nobody can fix today never holds an outage
@@ -12,7 +12,9 @@
 #   notifies them by email and on the mobile app;
 # - problems that changed since the issue's last report: comment the new list (another notification);
 # - the same problems again: nothing, so a standing problem is one notification, not one a run;
-# - no problems and an open issue: comment that it recovered, and close it.
+# - no problems and an open issue: comment that it recovered, and close it. When the optional
+#   accepted file lists anything, the comment says those are accepted instead, since a warning held
+#   back by .github/watchdog/accepted-warnings.txt is still firing and has not recovered.
 #
 # Expects GH_TOKEN, GH_REPO and OWNER in the environment, and the GITHUB_* variables Actions sets.
 
@@ -22,6 +24,7 @@ label=$1
 problems=$2
 title_prefix=$3
 opening=$4
+accepted=${5:-}
 
 gh label create "${label}" --color B60205 \
   --description "Opened and closed by the showcase watchdog" 2>/dev/null || true
@@ -32,7 +35,15 @@ now=$(date -u '+%Y-%m-%d %H:%M UTC')
 
 if [[ ! -s ${problems} ]]; then
   if [[ -n ${issue} ]]; then
-    gh issue comment "${issue}" --body "Recovered: nothing to report at ${now} ([run](${run_url}))."
+    if [[ -n ${accepted} && -s ${accepted} ]]; then
+      gh issue comment "${issue}" --body "Nothing left to report at ${now} ([run](${run_url})).
+Still firing, but accepted in \`.github/watchdog/accepted-warnings.txt\`:
+
+$(sed 's/^/- /' "${accepted}")"
+    else
+      gh issue comment "${issue}" --body "Recovered: nothing to report at ${now} ([run](${run_url}))."
+    fi
+
     gh issue close "${issue}"
   fi
 

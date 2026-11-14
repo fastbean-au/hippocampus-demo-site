@@ -150,12 +150,16 @@ python3 -m http.server 8000
 ./showcase/check-consistency.sh
 ```
 
-There is no test suite; `showcase/check-consistency.sh` is the one check.
+`showcase/check-consistency.sh` is the check for the showcase itself. The watchdog has unit tests:
+`python3 -I -m unittest discover -s .github/watchdog` (run by `watchdog-tests.yml` on any change to
+it).
 
 The live showcase is watched from outside by `.github/workflows/watchdog.yml` (every 15 min,
 `.github/watchdog/probe.py`). It probes every host the Caddyfile serves, and reads Grafana's
 critical rules anonymously. It opens one `watchdog` issue while anything fails and closes it on
-recovery, and a separate `watchdog-warning` issue for any warning that has fired for 3+ days. The host's own rules (disk) live in `showcase/observability/showcase-alerting-rules.yaml`,
+recovery, and a separate `watchdog-warning` issue for any warning that has fired for 3+ days,
+except those listed in `.github/watchdog/accepted-warnings.txt` (rule + service + end date or
+`never`). The host's own rules (disk) live in `showcase/observability/showcase-alerting-rules.yaml`,
 never in `alerting-rules.yaml`, which stays a byte-for-byte copy of the hippocampus repo's. See
 [`docs/showcase.md`](docs/showcase.md#being-told-when-it-breaks).
 
