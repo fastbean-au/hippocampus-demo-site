@@ -105,7 +105,7 @@
             "image": "https://hippocampus-demo.com/assets/og-image.png",
             "softwareHelp": "https://github.com/fastbean-au/hippocampus",
             "codeRepository": "https://github.com/fastbean-au/hippocampus",
-            "keywords": "storage engine, data retention, edge ingestion, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, agent memory, MCP server, LlamaIndex, Python client, semantic search, hybrid search, vector search, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, OpenTelemetry, Prometheus, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
+            "keywords": "storage engine, data retention, edge ingestion, log management, audit trail, context management, memory consolidation, cognitive architecture, bounded storage, decay algorithm, long-term storage, agent memory, MCP server, LlamaIndex, LangGraph, Python client, semantic search, hybrid search, vector search, gRPC, Go, SQLite, PostgreSQL, MySQL, OpenSearch, OpenTelemetry, Prometheus, Kubernetes, Kustomize, Docker Compose, container image, Homebrew, systemd, launchd, deb package, rpm package",
             "publisher": { "@id": "https://hippocampus-demo.com/#org" },
             "offers": {
               "@type": "Offer",
@@ -409,7 +409,16 @@
                 retrieval <em>reinforces</em> what it returns: a fact the agent
                 keeps reaching for survives by being used, and one it never
                 retrieves decays out — no eviction policy, no cap, no TTL to
-                maintain.
+                maintain. The
+                <a
+                  href="https://github.com/fastbean-au/hippocampus/blob/main/docs/langgraph.md"
+                  rel="noopener"
+                  ><strong>LangGraph</strong></a
+                >
+                store (<code>langgraph-store-hippocampus</code>) does the same
+                as a <code>BaseStore</code>: LangGraph's
+                <code>refresh_ttl</code> becomes a recall, so reading an item is
+                what keeps it alive.
               </p>
             </article>
             <article class="card">
