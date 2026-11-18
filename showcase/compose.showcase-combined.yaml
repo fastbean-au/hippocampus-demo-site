@@ -720,7 +720,7 @@ services:
       retries: 12
 
   opensearch:
-    image: opensearchproject/opensearch:3.9.0
+    image: opensearchproject/opensearch:3.10.0
     restart: unless-stopped
     environment:
       discovery.type: single-node
